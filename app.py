@@ -21,9 +21,6 @@ def get_client_secret():
             request.args.get('api_secret'))
 
 def is_authorized():
-    # 暫時性的高度寬容：如果是在進行驗證測試，我們先放行
-    if request.path.endswith('verifyauth') or request.path.endswith('test'):
-        return True
     secret = get_client_secret()
     if not secret: return False
     return secret == EXPECTED_HASH or secret == API_SECRET
@@ -37,15 +34,10 @@ def send_line_message(text):
     try: requests.post(url, headers=headers, json=data, timeout=5)
     except: pass
 
-# 全方位日誌紀錄 (幫助抓出 App 到底在抓哪個網址)
 @app.before_request
 def log_request_info():
-    print(f"📡 [連線請求] {request.method} {request.path} | 來自: {request.remote_addr}")
-
-@app.errorhandler(404)
-def page_not_found(e):
-    print(f"❌ [404 錯誤] App 嘗試存取不存在的路徑: {request.path}")
-    return jsonify({"error": "Not Found", "path": request.path}), 404
+    if not request.path.startswith('/static'):
+        print(f"📡 [連線請求] {request.method} {request.path}")
 
 @app.route('/sw.js')
 def sw(): return app.send_static_file('sw.js')
@@ -68,17 +60,38 @@ def home():
 @app.route('/api/v1/status', methods=['GET'])
 @app.route('/api/v1/status.json', methods=['GET'])
 def get_status():
+    now = datetime.now()
     return jsonify({
         "status": "ok",
         "name": "Nightscout",
         "version": "14.2.2",
-        "authorized": True,
-        "settings": {"units": "mg/dL", "timeFormat": 24}
+        "serverTime": now.isoformat(),
+        "serverTimeEpoch": int(now.timestamp() * 1000),
+        "apiEnabled": True,
+        "authorized": is_authorized(),
+        "settings": {
+            "units": "mg/dL",
+            "timeFormat": 24,
+            "nightMode": True,
+            "editMode": True,
+            "customTitle": "CGM"
+        }
     })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
-    return jsonify({"status": "ok", "authorized": True, "api_secret_hash": EXPECTED_HASH})
+    auth_ok = is_authorized()
+    # 這裡嚴格模擬正版 Nightscout 的回傳欄位
+    return jsonify({
+        "canRead": True,
+        "canWrite": True,
+        "isAdmin": True,
+        "message": "OK" if auth_ok else "UNAUTHORIZED",
+        "rolefound": "FOUND" if auth_ok else "NOTFOUND",
+        "permissions": "ROLE" if auth_ok else "DEFAULT",
+        "authorized": auth_ok,
+        "api_secret_hash": EXPECTED_HASH
+    })
 
 @app.route('/api/v1/experiments/test', methods=['GET'])
 def experiments_test():
@@ -86,7 +99,7 @@ def experiments_test():
 
 @app.route('/api/v1/profile', methods=['GET'])
 def get_profile():
-    return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL"}}}])
+    return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL", "targets_high": [{"time": "00:00", "value": 180}], "targets_low": [{"time": "00:00", "value": 70}]}}}])
 
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
 @app.route('/api/v1/entries.json', methods=['GET', 'POST'])
