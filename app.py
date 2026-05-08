@@ -24,18 +24,19 @@ API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
 
 def get_client_secret():
-    auth_header = request.headers.get('Authorization', '')
-    bearer_token = auth_header.replace('Bearer ', '').replace('token=', '') if auth_header.startswith('Bearer') else ''
+    # 支援所有可能的大小寫組合
     return (request.headers.get('api-secret') or 
+            request.headers.get('Api-Secret') or 
             request.headers.get('API-SECRET') or 
             request.headers.get('x-nightscout-token') or
-            bearer_token or
             request.args.get('token') or 
             request.args.get('api_secret'))
 
 def is_authorized():
-    # 【測試模式】暫時永遠回傳 True，用來確認是否為密碼驗證問題
-    return True
+    secret = get_client_secret()
+    if not secret: return False
+    # 確認 App 傳來的是明文或是雜湊值
+    return secret.lower() == EXPECTED_HASH.lower() or secret == API_SECRET
 
 @app.after_request
 def add_nightscout_headers(response):
@@ -46,7 +47,6 @@ def add_nightscout_headers(response):
 def log_request_info():
     if not request.path.startswith('/static'):
         print(f"📡 [連線請求] {request.method} {request.path}")
-        # 印出所有 Headers 幫助除錯
         headers = {k: v for k, v in request.headers.items() if k.lower() in ['api-secret', 'authorization', 'token', 'user-agent']}
         print(f"🔑 [標頭內容] {headers}")
 
@@ -79,20 +79,25 @@ def get_status():
         "serverTime": now.isoformat().replace('+00:00', 'Z'),
         "serverTimeEpoch": int(now.timestamp() * 1000),
         "apiEnabled": True,
-        "authorized": True,
+        "authorized": is_authorized(),
         "settings": {"units": "mg/dL", "timeFormat": 24, "nightMode": True, "editMode": True}
     })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
+    auth_ok = is_authorized()
+    # 完全模擬正版 Nightscout 的回傳結構 (精簡版)
     return jsonify({
-        "canRead": True, "canWrite": True, "isAdmin": True,
-        "message": "OK", "rolefound": "FOUND", "permissions": "ROLE",
-        "authorized": True, "api_secret_hash": EXPECTED_HASH
+        "canRead": True,
+        "canWrite": True,
+        "isAdmin": True,
+        "message": "OK" if auth_ok else "UNAUTHORIZED",
+        "rolefound": "FOUND" if auth_ok else "NOTFOUND",
+        "permissions": "ROLE" if auth_ok else "DEFAULT"
     })
 
 @app.route('/api/v1/experiments/test', methods=['GET'])
-def experiments_test(): return jsonify({"status": "ok", "authorized": True})
+def experiments_test(): return jsonify({"status": "ok", "authorized": is_authorized()})
 
 @app.route('/api/v1/profile', methods=['GET'])
 @app.route('/api/v1/profile.json', methods=['GET'])
@@ -109,10 +114,10 @@ def entries_api():
         conn.close()
         return jsonify([dict(r) for r in rows])
     
+    if not is_authorized(): return jsonify({"error": "Unauthorized"}), 401
     data = request.get_json()
     if not data: return jsonify({"error": "No Data"}), 400
     items = [data] if isinstance(data, dict) else data
-    
     conn = database.get_db_connection()
     c = conn.cursor()
     for entry in items:
