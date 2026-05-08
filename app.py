@@ -265,9 +265,10 @@ def receive_entries():
     # 步驟 A: 安全性驗證 (檢查 api-secret)
     client_secret = request.headers.get('api-secret')
     
-    if not client_secret or client_secret != EXPECTED_HASH:
-        print("⚠️ 阻擋了一次未授權的上傳嘗試")
-        return jsonify({"error": "Unauthorized", "message": "密碼錯誤"}), 401
+    # 同時支援 SHA1 雜湊值與明碼驗證，增加 App 相容性
+    if not client_secret or (client_secret != EXPECTED_HASH and client_secret != API_SECRET):
+        print(f"⚠️ 授權失敗！收到: {client_secret}")
+        return jsonify({"error": "Unauthorized", "message": "密碼或授權錯誤"}), 401
     
     # 步驟 B: 獲取 App 傳來的 JSON 資料 (通常是一個 List)
     data = request.get_json()
