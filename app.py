@@ -14,20 +14,26 @@ API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
 
 def get_client_secret():
-    return request.headers.get('api-secret') or request.headers.get('API-SECRET') or request.args.get('token')
+    # 掃描所有可能的密碼標頭
+    return (request.headers.get('api-secret') or 
+            request.headers.get('API-SECRET') or 
+            request.headers.get('x-nightscout-token') or
+            request.args.get('token') or 
+            request.args.get('api_secret'))
 
 def is_authorized():
     secret = get_client_secret()
     if not secret: return False
+    # 支援明碼或雜湊
     return secret == EXPECTED_HASH or secret == API_SECRET
 
 def send_line_message(text):
-    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU= ")
+    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
     if not token: return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     data = {"messages": [{"type": "text", "text": text}]}
-    try: requests.post(url, headers=headers, json=data)
+    try: requests.post(url, headers=headers, json=data, timeout=5)
     except: pass
 
 @app.route('/sw.js')
@@ -63,7 +69,8 @@ def get_status():
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
-    return jsonify({"status": "ok", "authorized": is_authorized(), "api_secret_hash": EXPECTED_HASH})
+    auth_ok = is_authorized()
+    return jsonify({"status": "ok", "authorized": auth_ok, "api_secret_hash": EXPECTED_HASH})
 
 @app.route('/api/v1/experiments/test', methods=['GET'])
 def experiments_test():
@@ -76,10 +83,9 @@ def get_profile():
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
 @app.route('/api/v1/entries.json', methods=['GET', 'POST'])
 def entries_api():
-    if request.method == 'GET':
-        return jsonify([])
-    
+    if request.method == 'GET': return jsonify([])
     if not is_authorized():
+        print(f"⚠️ 拒絕 POST: 密碼錯誤")
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
@@ -98,9 +104,10 @@ def entries_api():
             arrows = {'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊'}
             msg = f"【血糖紀錄】\n數值: {val} {arrows.get(dir_str, dir_str)}\n時間: {date_str.split('T')[1][:5] if 'T' in date_str else date_str}"
             send_line_message(msg)
-        except: pass
+        except Exception as e: print(f"通知發送失敗: {e}")
     conn.commit()
     conn.close()
+    print(f"✅ 成功接收 {len(items)} 筆資料")
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/v1/treatments', methods=['GET', 'POST'])
