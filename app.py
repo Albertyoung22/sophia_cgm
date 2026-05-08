@@ -270,28 +270,36 @@ def receive_entries():
         print(f"⚠️ 授權失敗！收到: {client_secret}")
         return jsonify({"error": "Unauthorized", "message": "密碼或授權錯誤"}), 401
     
-    # 步驟 B: 獲取 App 傳來的 JSON 資料 (通常是一個 List)
+    # 步驟 B: 獲取 App 傳來的 JSON 資料
     data = request.get_json()
-    
     if not data:
         return jsonify({"error": "Bad Request", "message": "沒有 JSON 資料"}), 400
         
-    # 步驟 C: 處理資料 (這裡我們把它印出來，您未來可以把它存進自己的資料庫或傳送 LINE 通知)
-    print(f"✅ 收到 {len(data)} 筆血糖資料！")
+    # 強大相容性：不論 App 傳送的是單一物件 {} 還是物件陣列 [{}, {}]，都統一處理
+    if isinstance(data, dict):
+        entries_list = [data]
+    else:
+        entries_list = data
+
+    print(f"✅ 收到 {len(entries_list)} 筆血糖資料！來源: {request.remote_addr}")
     
     global latest_alert
-    
     conn = database.get_db_connection()
     c = conn.cursor()
     
-    for entry in data:
-        # 取出我們在意的欄位
-        bg_value = entry.get('sgv')
-        direction = entry.get('direction', '無趨勢')
-        date_str = entry.get('dateString', '無時間')
-        device = entry.get('device', '未知設備')
+    for entry in entries_list:
+        # 取出欄位 (支援多種 App 常見命名)
+        bg_value = entry.get('sgv') or entry.get('mbg') or entry.get('glucose') or entry.get('value')
+        direction = entry.get('direction') or entry.get('trend_direction') or 'Flat'
         
-        print(f" ➡️ [測量時間]: {date_str} | [血糖值]: {bg_value} mg/dL | [趨勢]: {direction} | [設備]: {device}")
+        # 時間戳記相容性
+        date_str = entry.get('dateString') or entry.get('date_string') or entry.get('display_time')
+        if not date_str:
+            date_str = datetime.now().isoformat()
+        
+        device = entry.get('device') or entry.get('uploader') or '未知設備'
+        
+        print(f" ➡️ [測量時間]: {date_str} | [血糖值]: {bg_value} | [趨勢]: {direction}")
         
         # 存入資料庫
         c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)',
