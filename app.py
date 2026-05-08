@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 import time
 import subprocess
+import requests
 
 app = Flask(__name__)
 # ==========================================
@@ -14,6 +15,34 @@ API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 
 # 事先計算好正確的 SHA1 雜湊值，用來與 App 傳來的比對
 EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
+
+# ==========================================
+# LINE Bot 設定
+# 預設使用您提供的 Channel Access Token
+# ==========================================
+LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
+
+def send_line_message(text):
+    if not LINE_ACCESS_TOKEN:
+        return
+    
+    # 使用 broadcast 可以傳送給所有加入此 Bot 的好友，不需要知道 User ID
+    url = "https://api.line.me/v2/bot/message/broadcast"
+    headers = {
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "messages": [{"type": "text", "text": text}]
+    }
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code != 200:
+            print(f"⚠️ LINE 傳送失敗: {response.text}")
+        else:
+            print("✅ 成功發送 LINE 通知")
+    except Exception as e:
+        print(f"⚠️ LINE 發生錯誤: {e}")
 
 # 儲存最新幾筆的血糖資料，為了在網頁上顯示
 latest_cgm_entries = []
@@ -106,6 +135,10 @@ def receive_entries():
                     "bg_value": val
                 }
                 print(f"🚨 觸發警報: {alert_text}")
+                
+                # 發送 LINE 通知
+                send_line_message(alert_text)
+                
         except Exception as e:
             print(f"Alert TTS error: {e}")
         
