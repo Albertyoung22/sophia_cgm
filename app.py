@@ -57,8 +57,12 @@ def sw():
 def manifest():
     return app.send_static_file('manifest.json')
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def home():
+    # 如果是 LINE 跑來驗證 Webhook (使用 POST)，直接回傳 200 OK 讓他通過
+    if request.method == 'POST':
+        return "OK", 200
+
     # 將資料反轉，讓舊的在左邊、新的在右邊，適合畫曲線圖
     chart_data = list(reversed(latest_cgm_entries))
     
