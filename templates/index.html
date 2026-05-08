@@ -13,8 +13,12 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="昕蓉CGM">
     <link rel="apple-touch-icon" href="/static/icon.svg">
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0/dist/date-fns.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.2/dist/chartjs-plugin-annotation.min.js"></script>
+    
     <style>
         :root {
             --bg-color: #000000;
@@ -255,7 +259,7 @@
             顏色
         </a>
         <a href="javascript:void(0)" onclick="openSettings()" class="tab-item">
-            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l-.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
             設定
         </a>
     </nav>
@@ -294,21 +298,12 @@
 
     <script>
         const timeFormat = localStorage.getItem('time_format') || '24';
-        const formatLocalTime = (isoStr) => {
-            if (!isoStr) return "";
-            let d = new Date(isoStr);
-            if (!isNaN(d.getTime())) return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
-            return isoStr;
-        };
-
-        const rawData = [
+        
+        const chartDataPoints = [
             {% for item in chart_data %}
-                { time: formatLocalTime("{{ item.date_str }}"), value: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
+                { x: new Date("{{ item.date_str }}"), y: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
             {% endfor %}
         ];
-        
-        const labels = rawData.map(d => d.time);
-        const dataValues = rawData.map(d => d.value);
 
         const ctx = document.getElementById('cgmChart')?.getContext('2d');
         if (ctx) {
@@ -316,20 +311,24 @@
             const cHigh = tTheme === 'colorblind' ? '#FF9F0A' : '#FF9F0A';
             const cLow = tTheme === 'colorblind' ? '#FF453A' : '#FF453A';
             const cNormal = tTheme === 'colorblind' ? '#0A84FF' : '#32D74B';
+            
+            // X 軸固定為過去 24 小時直到現在
+            const now = new Date();
+            const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
             window.cgmChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
                     datasets: [{
                         label: '血糖值',
-                        data: dataValues,
+                        data: chartDataPoints,
                         borderColor: '#0A84FF',
                         backgroundColor: 'rgba(10, 132, 255, 0.1)',
                         borderWidth: 3,
-                        pointBackgroundColor: dataValues.map(v => v > 180 ? cHigh : (v < 70 ? cLow : cNormal)),
+                        pointBackgroundColor: chartDataPoints.map(p => p.y > 180 ? cHigh : (p.y < 70 ? cLow : cNormal)),
                         pointBorderColor: '#000000',
                         pointBorderWidth: 2,
-                        pointRadius: 5,
+                        pointRadius: 4,
                         fill: true,
                         tension: 0.4
                     }]
@@ -337,10 +336,30 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(28, 28, 30, 0.9)', cornerRadius: 12 } },
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(28, 28, 30, 0.9)', cornerRadius: 12 } 
+                    },
                     scales: {
-                        y: { suggestedMin: 40, suggestedMax: 300, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#8E8E93' } },
-                        x: { grid: { display: false }, ticks: { color: '#8E8E93', maxTicksLimit: 6 } }
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: {
+                                    hour: timeFormat === '12' ? 'h a' : 'HH:mm'
+                                }
+                            },
+                            min: past24h,
+                            max: now,
+                            grid: { display: false },
+                            ticks: { color: '#8E8E93', maxRotation: 0, autoSkip: true }
+                        },
+                        y: { 
+                            suggestedMin: 40, 
+                            suggestedMax: 260, 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                            ticks: { color: '#8E8E93' } 
+                        }
                     }
                 }
             });
@@ -423,7 +442,6 @@
             if (!isNaN(d.getTime())) el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
         });
 
-        // PWA Installation Handling
         let deferredPrompt;
         const installBtn = document.getElementById('manualInstallBtn');
         window.addEventListener('beforeinstallprompt', (e) => {
@@ -431,7 +449,6 @@
             deferredPrompt = e;
             if (installBtn) installBtn.style.display = 'block';
         });
-
         if (installBtn) {
             installBtn.addEventListener('click', async () => {
                 if (!deferredPrompt) return;
@@ -443,7 +460,6 @@
                 }
             });
         }
-
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW Reg OK')).catch(err => console.log('SW Reg Fail', err));
