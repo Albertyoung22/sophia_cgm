@@ -10,13 +10,26 @@ import database
 app = Flask(__name__)
 database.init_db()
 
+def bootstrap_db():
+    conn = database.get_db_connection()
+    count = conn.execute('SELECT COUNT(*) FROM entries').fetchone()[0]
+    if count == 0:
+        conn.execute("INSERT INTO entries (sgv, direction, dateString, device) VALUES (100, 'Flat', ?, 'System')", (datetime.now().isoformat(),))
+        conn.commit()
+    conn.close()
+
+bootstrap_db()
+
 API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
 
 def get_client_secret():
+    auth_header = request.headers.get('Authorization', '')
+    bearer_token = auth_header.replace('Bearer ', '').replace('token=', '') if auth_header.startswith('Bearer') else ''
     return (request.headers.get('api-secret') or 
             request.headers.get('API-SECRET') or 
             request.headers.get('x-nightscout-token') or
+            bearer_token or
             request.args.get('token') or 
             request.args.get('api_secret'))
 
@@ -25,14 +38,11 @@ def is_authorized():
     if not secret: return False
     return secret == EXPECTED_HASH or secret == API_SECRET
 
-def send_line_message(text):
-    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
-    if not token: return
-    url = "https://api.line.me/v2/bot/message/broadcast"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    data = {"messages": [{"type": "text", "text": text}]}
-    try: requests.post(url, headers=headers, json=data, timeout=5)
-    except: pass
+# 注入正版 Nightscout 的標頭特徵
+@app.after_request
+def add_nightscout_headers(response):
+    response.headers['X-Nightscout-API-Version'] = '14.2.2'
+    return response
 
 @app.before_request
 def log_request_info():
@@ -68,24 +78,17 @@ def get_status():
         "serverTime": now.isoformat(),
         "serverTimeEpoch": int(now.timestamp() * 1000),
         "apiEnabled": True,
-        "authorized": is_authorized(),
-        "settings": {
-            "units": "mg/dL",
-            "timeFormat": 24,
-            "nightMode": True,
-            "editMode": True,
-            "customTitle": "CGM"
-        }
+        "careportalEnabled": False,
+        "boluscalcEnabled": False,
+        "authorized": True,
+        "settings": {"units": "mg/dL", "timeFormat": 24, "nightMode": True, "editMode": True, "customTitle": "CGM"}
     })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
     auth_ok = is_authorized()
-    # 這裡嚴格模擬正版 Nightscout 的回傳欄位
     return jsonify({
-        "canRead": True,
-        "canWrite": True,
-        "isAdmin": True,
+        "canRead": True, "canWrite": True, "isAdmin": True,
         "message": "OK" if auth_ok else "UNAUTHORIZED",
         "rolefound": "FOUND" if auth_ok else "NOTFOUND",
         "permissions": "ROLE" if auth_ok else "DEFAULT",
@@ -94,17 +97,23 @@ def verify_auth():
     })
 
 @app.route('/api/v1/experiments/test', methods=['GET'])
-def experiments_test():
-    return jsonify({"status": "ok", "authorized": True})
+def experiments_test(): return jsonify({"status": "ok", "authorized": True})
 
 @app.route('/api/v1/profile', methods=['GET'])
+@app.route('/api/v1/profile.json', methods=['GET'])
 def get_profile():
-    return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL", "targets_high": [{"time": "00:00", "value": 180}], "targets_low": [{"time": "00:00", "value": 70}]}}}])
+    return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL"}}}])
 
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
+@app.route('/api/v1/entries/', methods=['GET', 'POST'])
 @app.route('/api/v1/entries.json', methods=['GET', 'POST'])
 def entries_api():
-    if request.method == 'GET': return jsonify([])
+    if request.method == 'GET':
+        conn = database.get_db_connection()
+        rows = conn.execute('SELECT sgv, direction, dateString FROM entries ORDER BY dateString DESC LIMIT 10').fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    
     if not is_authorized(): return jsonify({"error": "Unauthorized"}), 401
     data = request.get_json()
     if not data: return jsonify({"error": "No Data"}), 400
@@ -124,7 +133,6 @@ def entries_api():
         except: pass
     conn.commit()
     conn.close()
-    print(f"✅ 成功接收 {len(items)} 筆資料")
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/v1/treatments', methods=['GET', 'POST'])
