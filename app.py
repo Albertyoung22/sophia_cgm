@@ -74,7 +74,24 @@ def home():
 # ==========================================
 # 2. 建立接收資料的 API 端點
 # App 會把資料 POST 到 /api/v1/entries
+# 許多上傳器會先檢查 /api/v1/status，所以我們給他一個假的回應讓他通過檢查
 # ==========================================
+@app.route('/api/v1/status', methods=['GET'])
+def get_status():
+    return jsonify({
+        "status": "ok",
+        "name": "Nightscout",
+        "version": "14.2.2",
+        "settings": {
+            "units": "mg/dL",
+            "timeFormat": 24,
+            "nightMode": False,
+            "editMode": True,
+            "showRawbg": "never",
+            "customTitle": "CGM"
+        }
+    })
+
 @app.route('/api/v1/entries', methods=['POST'])
 def receive_entries():
     # 步驟 A: 安全性驗證 (檢查 api-secret)
