@@ -63,11 +63,28 @@ def home():
 
 @app.route('/api/v1/status', methods=['GET'])
 def get_status():
-    return jsonify({"status": "ok", "name": "Nightscout", "version": "14.2.2"})
+    return jsonify({
+        "status": "ok",
+        "name": "Nightscout",
+        "version": "14.2.2",
+        "settings": {
+            "units": "mg/dL",
+            "timeFormat": 24,
+            "nightMode": True,
+            "editMode": True,
+            "customTitle": "CGM"
+        },
+        "authorized": True
+    })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
-    return jsonify({"status": "ok", "authorized": True})
+    return jsonify({
+        "status": "ok", 
+        "authorized": True,
+        "message": "Auth accepted",
+        "api_secret_hash": EXPECTED_HASH
+    })
 
 @app.route('/api/v1/entries', methods=['POST'])
 def receive_entries():
