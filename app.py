@@ -296,39 +296,42 @@ def receive_entries():
         c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)',
                   (bg_value, direction, date_str, device))
         
-        # --- 血糖示警功能 ---
+        # --- 血糖紀錄與示警功能 ---
         try:
             val = int(bg_value)
+            
+            # 定義趨勢箭頭
+            arrows = {
+                'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗',
+                'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊'
+            }
+            arrow = arrows.get(direction, direction)
+            
+            # 格式化顯示內容
+            line_text = f"【血糖報告】\n數值: {val} {arrow}\n趨勢: {direction}\n時間: {date_str.split('T')[1][:5] if 'T' in date_str else date_str}"
+            
             alert_text = None
             if val > 180:
-                alert_text = f"警告，當前血糖偏高，數值為 {val}。"
+                alert_text = f"⚠️ 警告：血糖偏高！({val})"
             elif val < 70:
-                alert_text = f"警告，當前血糖偏低，數值為 {val}。"
+                alert_text = f"🚨 警告：血糖偏低！({val})"
                 
-            # AR2 簡單預測警報 (如果過去 20 筆資料足夠，這裡只做非常粗略的兩點斜率預測)
-            # 未來可擴充更精細的 AR2
-            
             if alert_text:
-                # 建立 static 資料夾存放語音檔
                 os.makedirs("static", exist_ok=True)
                 audio_path = os.path.join("static", "alert.mp3")
-                # 執行 edge-tts 產生語音 (7.2.8 版)
                 subprocess.run(['edge-tts', '--voice', 'zh-TW-HsiaoChenNeural', '--text', alert_text, '--write-media', audio_path], check=False)
                 
-                latest_alert = {
-                    "text": alert_text,
-                    "time": time.time(),
-                    "bg_value": val
-                }
-                print(f"🚨 觸發警報: {alert_text}")
+                latest_alert = { "text": alert_text, "time": time.time(), "bg_value": val }
+                line_text = f"{alert_text}\n{line_text}"
                 
-                # 發送多管道推播通知
-                send_line_message(alert_text)
                 send_pushover_message(alert_text)
                 send_ifttt_message(alert_text)
+            
+            # 每一次血糖變化都發送到 LINE
+            send_line_message(line_text)
                 
         except Exception as e:
-            print(f"Alert TTS error: {e}")
+            print(f"Alert processing error: {e}")
         
     conn.commit()
     conn.close()
