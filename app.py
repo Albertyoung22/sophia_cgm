@@ -10,13 +10,10 @@ import database
 app = Flask(__name__)
 database.init_db()
 
-# 取得密碼設定
 API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
-# 事先算好 SHA1
 EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
 
 def get_client_secret():
-    # 不分大小寫取得 api-secret 標頭
     return request.headers.get('api-secret') or request.headers.get('API-SECRET') or request.args.get('token')
 
 def is_authorized():
@@ -55,35 +52,32 @@ def home():
 
 @app.route('/api/v1/status', methods=['GET'])
 def get_status():
-    res = {
+    return jsonify({
         "status": "ok",
         "name": "Nightscout",
         "version": "14.2.2",
         "authorized": is_authorized(),
         "settings": {"units": "mg/dL", "timeFormat": 24}
-    }
-    return jsonify(res)
+    })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
     auth_ok = is_authorized()
-    print(f"🔍 驗證連線中... 授權結果: {auth_ok}")
-    return jsonify({
-        "status": "ok",
-        "authorized": auth_ok,
-        "api_secret_hash": EXPECTED_HASH
-    })
+    return jsonify({"status": "ok", "authorized": auth_ok, "api_secret_hash": EXPECTED_HASH})
+
+@app.route('/api/v1/profile', methods=['GET'])
+def get_profile():
+    # 回傳一個標準的模擬 Profile
+    return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL", "targets_high": [{"time": "00:00", "value": 180}], "targets_low": [{"time": "00:00", "value": 70}]}}}])
 
 @app.route('/api/v1/entries', methods=['POST'])
+@app.route('/api/v1/entries.json', methods=['POST'])
 def receive_entries():
     if not is_authorized():
-        print(f"⚠️ 拒絕上傳: 密碼錯誤 (收到: {get_client_secret()})")
         return jsonify({"error": "Unauthorized"}), 401
-    
     data = request.get_json()
     if not data: return jsonify({"error": "No Data"}), 400
     items = [data] if isinstance(data, dict) else data
-    
     conn = database.get_db_connection()
     c = conn.cursor()
     for entry in items:
@@ -91,21 +85,21 @@ def receive_entries():
         if not val: continue
         dir_str = entry.get('direction') or 'Flat'
         date_str = entry.get('dateString') or entry.get('date_string') or datetime.now().isoformat()
-        
         c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)', (val, dir_str, date_str, 'App'))
-        
         try:
             arrows = {'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊'}
             msg = f"【血糖紀錄】\n數值: {val} {arrows.get(dir_str, dir_str)}\n時間: {date_str.split('T')[1][:5] if 'T' in date_str else date_str}"
-            if int(val) > 180 or int(val) < 70:
-                msg = f"{'⚠️ 高血糖' if int(val) > 180 else '🚨 低血糖'}!\n{msg}"
             send_line_message(msg)
         except: pass
-        
     conn.commit()
     conn.close()
-    print(f"✅ 成功接收 {len(items)} 筆資料")
     return jsonify({"status": "success"}), 200
+
+@app.route('/api/v1/treatments', methods=['GET', 'POST'])
+def treatments(): return jsonify([])
+
+@app.route('/api/v1/devicestatus', methods=['GET', 'POST'])
+def devicestatus(): return jsonify([])
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
