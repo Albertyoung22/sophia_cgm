@@ -1,12 +1,12 @@
 {
-  "name": "CGM 血糖接收器",
-  "short_name": "CGM",
-  "description": "Python CGM 血糖接收與監控儀表板",
+  "name": "昕蓉的 CGM",
+  "short_name": "昕蓉CGM",
+  "description": "即時血糖監控儀表板 (iOS Style)",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "/static/icon.svg",
@@ -22,7 +22,7 @@
       "src": "/static/icon.svg",
       "sizes": "512x512",
       "type": "image/svg+xml",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ]
 }

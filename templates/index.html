@@ -9,6 +9,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="昕蓉CGM">
+    <link rel="apple-touch-icon" href="/static/icon.svg">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.2/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
@@ -308,6 +312,7 @@
         const labels = rawData.map(d => d.time);
         const dataValues = rawData.map(d => d.value);
 
+        // --- Chart Logic (Only if element exists) ---
         const ctx = document.getElementById('cgmChart')?.getContext('2d');
         if (ctx) {
             const tTheme = localStorage.getItem('theme') || 'default';
@@ -338,29 +343,17 @@
                     maintainAspectRatio: false,
                     plugins: {
                         legend: { display: false },
-                        tooltip: { 
-                            mode: 'index', 
-                            intersect: false,
-                            backgroundColor: 'rgba(28, 28, 30, 0.9)',
-                            titleFont: { size: 14 },
-                            bodyFont: { size: 14 },
-                            padding: 12,
-                            cornerRadius: 12
-                        }
+                        tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(28, 28, 30, 0.9)', cornerRadius: 12 }
                     },
                     scales: {
-                        y: { 
-                            suggestedMin: 40,
-                            suggestedMax: 300,
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
-                            ticks: { color: '#8E8E93', font: { weight: '600' } } 
-                        },
-                        x: { grid: { display: false }, ticks: { color: '#8E8E93', maxTicksLimit: 6, font: { weight: '600' } } }
+                        y: { suggestedMin: 40, suggestedMax: 300, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#8E8E93' } },
+                        x: { grid: { display: false }, ticks: { color: '#8E8E93', maxTicksLimit: 6 } }
                     }
                 }
             });
         }
 
+        // --- Shared Logic ---
         let currentUnit = localStorage.getItem('bg_unit') || 'mg/dL';
         let customTitle = localStorage.getItem('custom_title') || '昕蓉的CGM';
         let currentTheme = localStorage.getItem('theme') || 'default';
@@ -376,22 +369,22 @@
             document.documentElement.style.setProperty('--primary', '#0A84FF');
         }
 
-        function openSettings() {
+        window.openSettings = function() {
             document.getElementById('settingUnit').value = currentUnit;
             document.getElementById('settingTimeFormat').value = localStorage.getItem('time_format') || '24';
             document.getElementById('settingTitle').value = customTitle;
             document.getElementById('settingTheme').value = currentTheme;
             document.getElementById('settingsModal').showModal();
-        }
+        };
 
-        function saveSettings() {
+        window.saveSettings = function() {
             localStorage.setItem('bg_unit', document.getElementById('settingUnit').value);
             localStorage.setItem('time_format', document.getElementById('settingTimeFormat').value);
             localStorage.setItem('custom_title', document.getElementById('settingTitle').value || '昕蓉的CGM');
             localStorage.setItem('theme', document.getElementById('settingTheme').value);
             document.getElementById('settingsModal').close();
             window.location.reload();
-        }
+        };
 
         function formatBG(valMgdl) {
             if (currentUnit === 'mmol/L') return parseFloat((valMgdl / 18.0182).toFixed(1));
@@ -405,10 +398,7 @@
             });
             
             const getTrendArrow = (dir) => {
-                const arrows = {
-                    'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗',
-                    'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊'
-                };
+                const arrows = { 'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊' };
                 return arrows[dir] || dir || '';
             };
 
@@ -417,9 +407,9 @@
                 if (dir) el.innerText = getTrendArrow(dir);
             });
 
+            // Update header live display
             const latestEntryEl = document.querySelector('.bg-val-num');
             const latestDirEl = document.querySelector('.bg-dir');
-            
             if (latestEntryEl && latestDirEl) {
                 const rawVal = parseFloat(latestEntryEl.getAttribute('data-mgdl'));
                 if (!isNaN(rawVal)) {
@@ -429,7 +419,7 @@
                     const headerLiveBg = document.getElementById('header-live-bg');
                     if (headerLiveBg) {
                         headerLiveBg.style.display = 'inline-block';
-                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.5em; font-weight: 500; opacity: 0.6; margin-left: 4px;">${currentUnit}</span>`;
+                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.5em; opacity: 0.6;">${currentUnit}</span>`;
                         if (rawVal > 180) headerLiveBg.style.color = 'var(--warning)';
                         else if (rawVal < 70) headerLiveBg.style.color = 'var(--danger)';
                         else headerLiveBg.style.color = 'var(--accent)';
@@ -439,12 +429,23 @@
         }
 
         applyUnit();
+
+        // Update all elements with local-time-display class
         document.querySelectorAll('.local-time-display').forEach(el => {
             const isoStr = el.getAttribute('data-time');
             if (!isoStr) return;
             const d = new Date(isoStr);
-            if (!isNaN(d.getTime())) el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+            if (!isNaN(d.getTime())) {
+                el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+            }
         });
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW Registered')).catch(err => console.log('SW Fail', err));
+            });
+        }
     </script>
 </body>
 </html>
