@@ -22,7 +22,7 @@ def is_authorized():
     return secret == EXPECTED_HASH or secret == API_SECRET
 
 def send_line_message(text):
-    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
+    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU= ")
     if not token: return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -51,6 +51,7 @@ def home():
     return render_template('index.html', entries=entries, chart_data=list(reversed(entries)), view_mode=request.args.get('view', 'main'))
 
 @app.route('/api/v1/status', methods=['GET'])
+@app.route('/api/v1/status.json', methods=['GET'])
 def get_status():
     return jsonify({
         "status": "ok",
@@ -62,22 +63,29 @@ def get_status():
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
-    auth_ok = is_authorized()
-    return jsonify({"status": "ok", "authorized": auth_ok, "api_secret_hash": EXPECTED_HASH})
+    return jsonify({"status": "ok", "authorized": is_authorized(), "api_secret_hash": EXPECTED_HASH})
+
+@app.route('/api/v1/experiments/test', methods=['GET'])
+def experiments_test():
+    return jsonify({"status": "ok", "authorized": is_authorized()})
 
 @app.route('/api/v1/profile', methods=['GET'])
 def get_profile():
-    # 回傳一個標準的模擬 Profile
     return jsonify([{"startDate": "2020-01-01T00:00:00.000Z", "defaultProfile": "Default", "store": {"Default": {"timezone": "Asia/Taipei", "units": "mg/dL", "targets_high": [{"time": "00:00", "value": 180}], "targets_low": [{"time": "00:00", "value": 70}]}}}])
 
-@app.route('/api/v1/entries', methods=['POST'])
-@app.route('/api/v1/entries.json', methods=['POST'])
-def receive_entries():
+@app.route('/api/v1/entries', methods=['GET', 'POST'])
+@app.route('/api/v1/entries.json', methods=['GET', 'POST'])
+def entries_api():
+    if request.method == 'GET':
+        return jsonify([])
+    
     if not is_authorized():
         return jsonify({"error": "Unauthorized"}), 401
+    
     data = request.get_json()
     if not data: return jsonify({"error": "No Data"}), 400
     items = [data] if isinstance(data, dict) else data
+    
     conn = database.get_db_connection()
     c = conn.cursor()
     for entry in items:
@@ -96,10 +104,8 @@ def receive_entries():
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/v1/treatments', methods=['GET', 'POST'])
-def treatments(): return jsonify([])
-
 @app.route('/api/v1/devicestatus', methods=['GET', 'POST'])
-def devicestatus(): return jsonify([])
+def empty_api(): return jsonify([])
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
