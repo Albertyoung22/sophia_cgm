@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CGM 血糖接收伺服器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- PWA / App 設定 -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="/static/icon.svg">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CGM 血糖">
+
+    <!-- 加入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --primary: #38bdf8;
+            --accent: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        .title-group h1 {
+            margin: 0;
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .title-group p {
+            margin: 0.5rem 0 0 0;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 9999px;
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 0.875rem;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+        }
+
+        .status-badge::before {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent);
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            box-shadow: 0 0 8px var(--accent);
+            animation: pulse 2s infinite;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-time {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .card-device {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        .bg-value-container {
+            display: flex;
+            align-items: baseline;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .bg-value {
+            font-size: 3rem;
+            font-weight: 800;
+        }
+
+        .bg-unit {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .bg-direction {
+            display: inline-block;
+            font-size: 1.5rem;
+            margin-left: 0.5rem;
+        }
+
+        /* Value color coding */
+        .val-high { color: var(--warning); }
+        .val-very-high { color: var(--danger); }
+        .val-low { color: var(--danger); }
+        .val-normal { color: var(--accent); }
+
+        .no-data {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 4rem;
+            background: var(--card-bg);
+            border-radius: 1rem;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+        }
+
+        /* Chart container */
+        .chart-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            height: 300px;
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        /* Alert Banner */
+        .alert-banner {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--danger);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            animation: pulse-danger 2s infinite, fadeInUp 0.5s ease-out;
+        }
+
+        .alert-icon {
+            font-size: 2.5rem;
+        }
+
+        .alert-content h2 {
+            margin: 0 0 0.5rem 0;
+            color: #fca5a5;
+            font-size: 1.5rem;
+        }
+
+        .alert-content p {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 1.1rem;
+        }
+
+        @keyframes pulse-danger {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Auto refresh countdown */
+        .refresh-indicator {
+            text-align: center;
+            margin-top: 3rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+    </style>
+    <script>
+        // Auto-refresh the page every 30 seconds to fetch new data
+        setTimeout(function() {
+            window.location.reload();
+        }, 30000);
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="title-group">
+                <h1>CGM 血糖接收器</h1>
+                <p>Nightscout / xDrip+ 資料接收端點</p>
+            </div>
+            <div class="status-badge">伺服器運作中</div>
+        </header>
+
+        {% if play_audio %}
+        <div class="alert-banner">
+            <div class="alert-icon">🚨</div>
+            <div class="alert-content">
+                <h2>血糖示警觸發</h2>
+                <p>{{ alert.text }}</p>
+                <!-- 自動播放 Edge-TTS 語音 -->
+                <audio id="alertAudio" src="/static/alert.mp3?t={{ alert.time }}" autoplay></audio>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if entries %}
+        <!-- 血糖曲線圖 -->
+        <div class="chart-container">
+            <canvas id="cgmChart"></canvas>
+        </div>
+        {% endif %}
+
+        <div class="dashboard-grid">
+            {% if entries %}
+                {% for entry in entries %}
+                    {% set val = entry.bg_value|int %}
+                    {% set val_class = 'val-normal' %}
+                    {% if val > 200 %}
+                        {% set val_class = 'val-very-high' %}
+                    {% elif val > 140 %}
+                        {% set val_class = 'val-high' %}
+                    {% elif val < 70 %}
+                        {% set val_class = 'val-low' %}
+                    {% endif %}
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-time">{{ entry.date_str }}</span>
+                            <span class="card-device">{{ entry.device }}</span>
+                        </div>
+                        <div class="bg-value-container">
+                            <span class="bg-value {{ val_class }}">{{ entry.bg_value }}</span>
+                            <span class="bg-unit">mg/dL</span>
+                            <span class="bg-direction {{ val_class }}">
+                                {% if entry.direction == 'DoubleUp' %}⇈
+                                {% elif entry.direction == 'SingleUp' %}↑
+                                {% elif entry.direction == 'FortyFiveUp' %}↗
+                                {% elif entry.direction == 'Flat' %}→
+                                {% elif entry.direction == 'FortyFiveDown' %}↘
+                                {% elif entry.direction == 'SingleDown' %}↓
+                                {% elif entry.direction == 'DoubleDown' %}⇊
+                                {% else %}{{ entry.direction }}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.5rem;">
+                            伺服器接收時間: {{ entry.received_at }}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="no-data">
+                    <svg style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.5;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                    <h3>目前還沒有收到任何血糖資料</h3>
+                    <p>請確保您的 App (如 xDrip+ 或 Nightscout Uploader) 已正確設定上傳網址與 API Secret。</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="refresh-indicator">
+            頁面將每 30 秒自動更新一次
+        </div>
+    </div>
+
+    {% if entries %}
+    <script>
+        // 解析 Jinja 傳來的資料給 Chart.js 使用
+        const rawData = [
+            {% for item in chart_data %}
+                { time: "{{ item.date_str.split('T')[1][:5] if 'T' in item.date_str else item.date_str[-8:-3] }}", value: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+
+        const labels = rawData.map(d => d.time);
+        const dataValues = rawData.map(d => d.value);
+
+        // 判斷顏色點
+        const pointColors = dataValues.map(val => {
+            if (val > 200) return '#ef4444'; // Very High
+            if (val > 140) return '#f59e0b'; // High
+            if (val < 70) return '#ef4444';  // Low
+            return '#10b981'; // Normal
+        });
+
+        const ctx = document.getElementById('cgmChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '血糖值 (mg/dL)',
+                    data: dataValues,
+                    borderColor: '#38bdf8',
+                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    borderWidth: 3,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: '#0f172a',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    fill: true,
+                    tension: 0.4 // 曲線平滑度
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                        titleColor: '#f8fafc',
+                        bodyColor: '#f8fafc',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', maxTicksLimit: 10 }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    </script>
+    {% endif %}
+
+    <!-- 如果瀏覽器阻擋自動播放，允許使用者點擊頁面任何地方來觸發音效 -->
+    <script>
+        document.body.addEventListener('click', function() {
+            const audio = document.getElementById('alertAudio');
+            if (audio && audio.paused) {
+                audio.play().catch(e => console.log("Audio play prevented:", e));
+            }
+        }, { once: true });
+    </script>
+
+    <!-- 註冊 Service Worker 讓網頁可以安裝成 App -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('PWA ServiceWorker 註冊成功:', reg.scope);
+                }).catch(err => {
+                    console.log('PWA ServiceWorker 註冊失敗:', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
