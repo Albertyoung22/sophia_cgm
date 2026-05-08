@@ -119,7 +119,12 @@ def home():
     conn = database.get_db_connection()
     # 抓取最新的血糖資料
     entries_rows = conn.execute('SELECT * FROM entries ORDER BY dateString DESC LIMIT 20').fetchall()
-    latest_cgm_entries = [dict(row) for row in entries_rows]
+    latest_cgm_entries = []
+    for row in entries_rows:
+        d = dict(row)
+        d['bg_value'] = d['sgv']
+        d['date_str'] = d['dateString']
+        latest_cgm_entries.append(d)
     
     # 抓取最近的治療紀錄 (供畫面顯示 IOB/COB 或標籤使用)
     treatment_rows = conn.execute('SELECT * FROM treatments ORDER BY created_at DESC LIMIT 50').fetchall()
@@ -179,28 +184,81 @@ def get_status():
 
 @app.route('/api/v1/test_line', methods=['POST'])
 def test_line():
-    test_msg = "🚨 [測試] 這是來自 CGM 儀表板的 LINE 與語音測試訊息！"
+    import random
+    from datetime import datetime, timedelta
     
-    # 觸發語音測試
+    conn = database.get_db_connection()
+    c = conn.cursor()
+    
+    now = datetime.now()
+    
+    # 決定模擬情境：高血糖急速上升或低血糖急速下降
+    is_high = random.choice([True, False])
+    
+    if is_high:
+        base_bg = random.randint(110, 130)
+        trend = random.randint(6, 10)  # 上升趨勢
+        direction = "DoubleUp"
+    else:
+        base_bg = random.randint(120, 150)
+        trend = random.randint(-10, -6) # 下降趨勢
+        direction = "DoubleDown"
+        
+    final_bg = base_bg
+    for i in range(11, -1, -1):
+        dt = now - timedelta(minutes=i*5)
+        bg = base_bg + (11 - i) * trend + random.randint(-2, 2)
+        if bg < 40: bg = 40
+        if bg > 400: bg = 400
+        
+        date_str = dt.isoformat()
+        c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)',
+                  (bg, direction, date_str, "Simulator"))
+        
+        if i == 0:
+            final_bg = bg
+            
+    conn.commit()
+    conn.close()
+    
+    # 根據最後一筆資料決定警報內容
+    val = final_bg
+    alert_text = None
+    if val > 180:
+        alert_text = f"警告，模擬資料測試，當前血糖偏高，數值為 {val}。"
+    elif val < 70:
+        alert_text = f"警告，模擬資料測試，當前血糖偏低，數值為 {val}。"
+    else:
+        alert_text = f"模擬資料測試完成，當前血糖 {val}。"
+        
+    # 產生語音警報
     try:
         os.makedirs("static", exist_ok=True)
         audio_path = os.path.join("static", "alert.mp3")
-        subprocess.run(['edge-tts', '--voice', 'zh-TW-HsiaoChenNeural', '--text', test_msg, '--write-media', audio_path], check=False)
+        subprocess.run(['edge-tts', '--voice', 'zh-TW-HsiaoChenNeural', '--text', alert_text, '--write-media', audio_path], check=False)
         
         global latest_alert
         latest_alert = {
-            "text": test_msg,
+            "text": alert_text,
             "time": time.time(),
-            "bg_value": "測試"
+            "bg_value": val
         }
     except Exception as e:
         print(f"Test TTS error: {e}")
         
-    # 發送 LINE / Pushover / IFTTT 通知
-    send_line_message(test_msg)
-    send_pushover_message(test_msg)
-    send_ifttt_message(test_msg)
-    return jsonify({"status": "success", "message": "測試訊息已送出"})
+    # 發送通知
+    send_line_message(alert_text)
+    send_pushover_message(alert_text)
+    send_ifttt_message(alert_text)
+    return jsonify({"status": "success", "message": "模擬資料已寫入"})
+
+@app.route('/api/v1/clear_simulation', methods=['POST'])
+def clear_simulation():
+    conn = database.get_db_connection()
+    conn.execute("DELETE FROM entries WHERE device='Simulator'")
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success"})
 
 @app.route('/api/v1/entries', methods=['POST'])
 def receive_entries():

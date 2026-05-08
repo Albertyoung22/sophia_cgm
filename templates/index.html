@@ -77,23 +77,23 @@
 
     {% if view_mode == 'clock' and current_entry %}
         <div class="mode-clock">
-            <div class="bg-val {{ val_class }}">{{ current_entry.bg_value }} <span class="bg-dir">{{ current_entry.direction }}</span></div>
-            <div class="time">{{ current_entry.date_str }}</div>
+            <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
+            <div class="time local-time-display" data-time="{{ current_entry.date_str }}">{{ current_entry.date_str }}</div>
         </div>
         <script>setTimeout(()=>window.location.reload(), 30000);</script>
         
     {% elif view_mode == 'color' and current_entry %}
         <div class="mode-color {{ bg_color_class }}">
-            <div class="bg-val">{{ current_entry.bg_value }}</div>
-            <div class="bg-dir">{{ current_entry.direction }}</div>
-            <div class="time" style="font-size: 3vw; opacity: 0.7;">{{ current_entry.date_str }}</div>
+            <div class="bg-val"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span></div>
+            <div class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</div>
+            <div class="time local-time-display" data-time="{{ current_entry.date_str }}" style="font-size: 3vw; opacity: 0.7;">{{ current_entry.date_str }}</div>
         </div>
         <script>setTimeout(()=>window.location.reload(), 30000);</script>
         
     {% elif view_mode == 'simple' and current_entry %}
         <div class="mode-simple">
-            <div class="bg-val {{ val_class }}">{{ current_entry.bg_value }} {{ current_entry.direction }}</div>
-            <div style="color: #94a3b8; font-size: 2rem; margin-top: 1rem;">{{ current_entry.date_str }}</div>
+            <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
+            <div class="local-time-display" data-time="{{ current_entry.date_str }}" style="color: #94a3b8; font-size: 2rem; margin-top: 1rem;">{{ current_entry.date_str }}</div>
             <div style="margin-top: 2rem; font-size: 1.5rem; background: rgba(255,255,255,0.05); padding: 1rem 2rem; border-radius: 1rem;">
                 <span style="color:var(--primary)">IOB:</span> {{ devicestatus.display_iob|default(0, true) }} U &nbsp;|&nbsp; 
                 <span style="color:var(--accent)">COB:</span> {{ devicestatus.display_cob|default(0, true) }} g
@@ -106,14 +106,19 @@
     <div class="container">
         <header>
             <div class="title-group">
-                <h1>昕蓉的CGM</h1>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h1>昕蓉的CGM</h1>
+                    <span id="header-live-bg" style="font-size: 2.5rem; font-weight: bold; background: rgba(0,0,0,0.3); padding: 0.2rem 1rem; border-radius: 1rem; display: none; line-height: 1;"></span>
+                </div>
                 <p>即時血糖視覺化與監控面板</p>
             </div>
             <div class="nav-links">
                 <a href="/?view=clock">時鐘</a>
                 <a href="/?view=color">顏色</a>
                 <a href="/?view=simple">極簡</a>
-                <button class="portal-btn" id="testLineBtn" style="background: var(--primary);">🔔 測試警報</button>
+                <button class="portal-btn" onclick="openSettings()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">⚙️ 設置</button>
+                <button class="portal-btn" id="testLineBtn" style="background: var(--primary);">🧪 模擬接收資料</button>
+                <button class="portal-btn" id="clearSimBtn" style="background: var(--danger);">🧹 清除模擬</button>
                 <button class="portal-btn" onclick="document.getElementById('carePortal').showModal()">➕ 照護日誌</button>
             </div>
         </header>
@@ -144,18 +149,16 @@
             </div>
         </div>
 
-        {% if entries %}
         <div class="chart-container">
             <canvas id="cgmChart"></canvas>
         </div>
-        {% endif %}
 
         <div class="dashboard-grid">
             {% for entry in entries[:6] %}
                 <div class="card">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">{{ entry.date_str }}</div>
+                    <div class="local-time-display" data-time="{{ entry.date_str }}" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">{{ entry.date_str }}</div>
                     <div style="font-size: 2.5rem; font-weight: bold; line-height: 1;" class="{% if entry.bg_value|int > 180 %}val-high{% elif entry.bg_value|int < 70 %}val-low{% else %}val-normal{% endif %}">
-                        {{ entry.bg_value }} <span style="font-size: 1.5rem">{{ entry.direction }}</span>
+                        <span class="bg-val-num" data-mgdl="{{ entry.bg_value }}">{{ entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ entry.direction }}" style="font-size: 1.5rem">{{ entry.direction }}</span>
                     </div>
                 </div>
             {% endfor %}
@@ -191,6 +194,37 @@
             
             <button type="button" onclick="submitTreatment()">送出紀錄</button>
             <button type="button" class="secondary" onclick="document.getElementById('carePortal').close()">取消</button>
+        </form>
+    </dialog>
+
+    <!-- Settings Modal -->
+    <dialog id="settingsModal">
+        <h2 style="margin-top: 0; color: var(--primary);">設置</h2>
+        <form id="settingsForm" method="dialog">
+            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">計量單位</label>
+            <select id="settingUnit">
+                <option value="mg/dL">mg/dL</option>
+                <option value="mmol/L">mmol/L</option>
+            </select>
+            
+            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">時間格式</label>
+            <select id="settingTimeFormat">
+                <option value="24">24小時制</option>
+                <option value="12">12小時制</option>
+            </select>
+            
+            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">自定義標題</label>
+            <input type="text" id="settingTitle" placeholder="Nightscout">
+            
+            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">主題</label>
+            <select id="settingTheme">
+                <option value="default">默認</option>
+                <option value="color">彩色</option>
+                <option value="colorblind">色盲患者可辨識的顏色</option>
+            </select>
+            
+            <button type="button" onclick="saveSettings()">儲存設置</button>
+            <button type="button" class="secondary" onclick="document.getElementById('settingsModal').close()">取消</button>
         </form>
     </dialog>
 
@@ -261,10 +295,39 @@
                 });
         });
 
-        {% if entries %}
+        document.getElementById('clearSimBtn')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if(confirm('確定要清除所有「模擬」產生的血糖資料嗎？\n這不會影響您真實上傳的紀錄。')) {
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '清除中...';
+                btn.disabled = true;
+                
+                fetch('/api/v1/clear_simulation', { method: 'POST' })
+                    .then(() => window.location.reload())
+                    .catch(() => {
+                        alert("清除失敗");
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    });
+            }
+        });
+
+        const timeFormat = localStorage.getItem('time_format') || '24';
+        
+        // Format times to local HH:MM string
+        const formatLocalTime = (isoStr) => {
+            if (!isoStr) return "";
+            let d = new Date(isoStr);
+            if (!isNaN(d.getTime())) {
+                return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+            }
+            return isoStr.includes('T') ? isoStr.split('T')[1].substring(0, 5) : isoStr.substring(isoStr.length - 8, isoStr.length - 3);
+        };
+
         const rawData = [
             {% for item in chart_data %}
-                { time: "{{ item.date_str.split('T')[1][:5] if 'T' in item.date_str else item.date_str[-8:-3] }}", value: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
+                { time: formatLocalTime("{{ item.date_str }}"), value: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
             {% endfor %}
         ];
         
@@ -272,7 +335,7 @@
             {% for t in treatments %}
                 {% if t.carbs > 0 or t.insulin > 0 %}
                 { 
-                    time: "{{ t.created_at.split('T')[1][:5] if 'T' in t.created_at else t.created_at[11:16] }}", 
+                    time: formatLocalTime("{{ t.created_at }}"), 
                     carbs: {{ t.carbs }}, 
                     insulin: {{ t.insulin }} 
                 }{% if not loop.last %},{% endif %}
@@ -295,7 +358,7 @@
                     type: 'line',
                     xMin: t.time,
                     xMax: t.time,
-                    borderColor: '#10b981',
+                    borderColor: (localStorage.getItem('theme') === 'colorblind') ? '#0c7bdc' : '#10b981',
                     borderWidth: 2,
                     borderDash: [5, 5],
                     label: {
@@ -310,18 +373,24 @@
             }
         });
 
-        const ctx = document.getElementById('cgmChart').getContext('2d');
-        new Chart(ctx, {
+        const ctx = document.getElementById('cgmChart')?.getContext('2d');
+        if (ctx) {
+            const tTheme = localStorage.getItem('theme') || 'default';
+            const cHigh = tTheme === 'colorblind' ? '#ffc20a' : '#f59e0b';
+            const cLow = tTheme === 'colorblind' ? '#d35f27' : '#ef4444';
+            const cNormal = tTheme === 'colorblind' ? '#0c7bdc' : '#10b981';
+            
+            window.cgmChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
                 datasets: [{
                     label: '血糖值 (mg/dL)',
                     data: dataValues,
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    borderColor: tTheme === 'colorblind' ? '#0c7bdc' : '#38bdf8',
+                    backgroundColor: tTheme === 'colorblind' ? 'rgba(12, 123, 220, 0.1)' : 'rgba(56, 189, 248, 0.1)',
                     borderWidth: 3,
-                    pointBackgroundColor: dataValues.map(v => v > 180 ? '#f59e0b' : (v < 70 ? '#ef4444' : '#10b981')),
+                    pointBackgroundColor: dataValues.map(v => v > 180 ? cHigh : (v < 70 ? cLow : cNormal)),
                     pointBorderColor: '#0f172a',
                     pointBorderWidth: 2,
                     pointRadius: 4,
@@ -338,16 +407,152 @@
                     tooltip: { mode: 'index', intersect: false }
                 },
                 scales: {
-                    y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8' } },
+                    y: { 
+                        suggestedMin: 40,
+                        suggestedMax: 300,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                        ticks: { color: '#94a3b8' } 
+                    },
                     x: { grid: { display: false }, ticks: { color: '#94a3b8', maxTicksLimit: 10 } }
                 }
             }
         });
+        }
 
-        // Auto-refresh main dashboard every 30s
-        setTimeout(() => window.location.reload(), 30000);
-        {% endif %}
     </script>
     {% endif %}
+
+    <!-- 全局共用邏輯 (單位切換、箭頭符號、標題列更新) -->
+    <script>
+        let currentUnit = localStorage.getItem('bg_unit') || 'mg/dL';
+        let customTitle = localStorage.getItem('custom_title') || '昕蓉的CGM';
+        let currentTheme = localStorage.getItem('theme') || 'default';
+
+        // Apply Custom Title
+        const h1 = document.querySelector('.title-group h1');
+        if (h1) h1.innerText = customTitle;
+        document.title = customTitle;
+
+        // Apply Theme
+        if (currentTheme === 'colorblind') {
+            document.documentElement.style.setProperty('--warning', '#ffc20a'); 
+            document.documentElement.style.setProperty('--danger', '#d35f27');  
+            document.documentElement.style.setProperty('--accent', '#0c7bdc');  
+            document.documentElement.style.setProperty('--primary', '#0c7bdc');
+        }
+
+        function openSettings() {
+            document.getElementById('settingUnit').value = currentUnit;
+            document.getElementById('settingTimeFormat').value = localStorage.getItem('time_format') || '24';
+            document.getElementById('settingTitle').value = customTitle;
+            document.getElementById('settingTheme').value = currentTheme;
+            document.getElementById('settingsModal').showModal();
+        }
+
+        function saveSettings() {
+            localStorage.setItem('bg_unit', document.getElementById('settingUnit').value);
+            localStorage.setItem('time_format', document.getElementById('settingTimeFormat').value);
+            localStorage.setItem('custom_title', document.getElementById('settingTitle').value || 'Nightscout');
+            localStorage.setItem('theme', document.getElementById('settingTheme').value);
+            document.getElementById('settingsModal').close();
+            window.location.reload();
+        }
+
+        function formatBG(valMgdl) {
+            if (currentUnit === 'mmol/L') {
+                return parseFloat((valMgdl / 18.0182).toFixed(1));
+            }
+            return parseFloat(valMgdl);
+        }
+
+        function applyUnit() {
+            document.querySelectorAll('.bg-val-num').forEach(el => {
+                const mgdl = parseFloat(el.getAttribute('data-mgdl'));
+                if (!isNaN(mgdl)) {
+                    el.innerText = formatBG(mgdl);
+                }
+            });
+            
+            // 將趨勢文字轉換為箭頭符號
+            const getTrendArrow = (dir) => {
+                const arrows = {
+                    'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗',
+                    'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊'
+                };
+                return arrows[dir] || dir || '';
+            };
+
+            document.querySelectorAll('.bg-dir').forEach(el => {
+                const dir = el.getAttribute('data-dir');
+                if (dir) {
+                    el.innerText = getTrendArrow(dir);
+                }
+            });
+
+            // 更新網頁分頁標題與主畫面大標題旁顯示最新血糖與箭頭
+            const latestEntryEl = document.querySelector('.bg-val-num');
+            const latestDirEl = document.querySelector('.bg-dir');
+            
+            if (latestEntryEl && latestDirEl) {
+                const rawVal = parseFloat(latestEntryEl.getAttribute('data-mgdl'));
+                if (!isNaN(rawVal)) {
+                    const bgVal = formatBG(rawVal);
+                    const arrow = getTrendArrow(latestDirEl.getAttribute('data-dir'));
+                    
+                    document.title = `${bgVal} ${arrow} | ${customTitle}`;
+                    
+                    const headerLiveBg = document.getElementById('header-live-bg');
+                    if (headerLiveBg) {
+                        headerLiveBg.style.display = 'inline-block';
+                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.45em; font-weight: normal; opacity: 0.8; margin-left: 4px; vertical-align: middle;">${currentUnit}</span>`;
+                        if (rawVal > 180) headerLiveBg.style.color = 'var(--warning)';
+                        else if (rawVal < 70) headerLiveBg.style.color = 'var(--danger)';
+                        else headerLiveBg.style.color = 'var(--accent)';
+                    }
+                }
+            } else {
+                document.title = customTitle;
+                const headerLiveBg = document.getElementById('header-live-bg');
+                if (headerLiveBg) headerLiveBg.style.display = 'none';
+            }
+            
+            const chart = typeof Chart !== 'undefined' ? Chart.getChart("cgmChart") : null;
+            if (chart && typeof rawData !== 'undefined') {
+                chart.data.datasets[0].label = `血糖值 (${currentUnit})`;
+                chart.data.datasets[0].data = rawData.map(d => formatBG(d.value));
+                
+                if (!chart.options.scales.y.title) {
+                    chart.options.scales.y.title = {};
+                }
+                chart.options.scales.y.title.display = true;
+                chart.options.scales.y.title.text = currentUnit;
+                chart.options.scales.y.title.color = '#94a3b8';
+                
+                if (currentUnit === 'mmol/L') {
+                    chart.options.scales.y.suggestedMin = 2.0;
+                    chart.options.scales.y.suggestedMax = 16.0;
+                } else {
+                    chart.options.scales.y.suggestedMin = 40;
+                    chart.options.scales.y.suggestedMax = 300;
+                }
+                
+                chart.update();
+            }
+        }
+
+        applyUnit();
+
+        // 轉換所有時間顯示為本地時間
+        document.querySelectorAll('.local-time-display').forEach(el => {
+            const isoStr = el.getAttribute('data-time');
+            if (!isoStr) return;
+            const d = new Date(isoStr);
+            if (!isNaN(d.getTime())) {
+                el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: (localStorage.getItem('time_format') || '24') === '12'});
+            } else {
+                el.innerText = isoStr.includes('T') ? isoStr.split('T')[1].substring(0, 5) : isoStr.substring(isoStr.length - 8, isoStr.length - 3);
+            }
+        });
+    </script>
 </body>
 </html>
