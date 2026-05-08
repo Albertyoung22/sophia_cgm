@@ -2,70 +2,170 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>昕蓉的CGM</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#000000">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.2/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         :root {
-            --bg-color: #0f172a; --card-bg: rgba(30, 41, 59, 0.7);
-            --primary: #38bdf8; --accent: #10b981;
-            --text-main: #f8fafc; --text-muted: #94a3b8;
-            --danger: #ef4444; --warning: #f59e0b;
+            --bg-color: #000000;
+            --card-bg: rgba(28, 28, 30, 0.8);
+            --primary: #0A84FF;
+            --accent: #32D74B;
+            --text-main: #FFFFFF;
+            --text-muted: #8E8E93;
+            --danger: #FF453A;
+            --warning: #FF9F0A;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --safe-bottom: env(safe-area-inset-bottom);
         }
-        body { margin: 0; font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-main); min-height: 100vh; }
-        .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+        body { 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 1.5rem 1rem calc(6rem + var(--safe-bottom)); 
+        }
         
+        .glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+        }
+
         /* View Modes */
-        .mode-clock, .mode-simple, .mode-color { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
-        .mode-clock .bg-val { font-size: 25vw; font-weight: 800; line-height: 1; margin-bottom: -5vh; }
-        .mode-clock .bg-dir { font-size: 15vw; }
-        .mode-clock .time { font-size: 5vw; color: var(--text-muted); }
+        .mode-clock, .mode-simple, .mode-color { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding-bottom: calc(4rem + var(--safe-bottom)); box-sizing: border-box; }
+        .mode-clock .bg-val { font-size: 32vw; font-weight: 700; letter-spacing: -2px; line-height: 1; }
+        .mode-clock .bg-dir { font-size: 15vw; margin-left: 10px; }
+        .mode-clock .time { font-size: 6vw; color: var(--text-muted); margin-top: 10px; }
         
-        .mode-color.bg-normal { background-color: #064e3b; }
-        .mode-color.bg-high { background-color: #78350f; }
-        .mode-color.bg-low { background-color: #7f1d1d; }
-        .mode-color .bg-val { font-size: 30vw; font-weight: 800; line-height: 1; }
-        .mode-color .bg-dir { font-size: 15vw; line-height: 1; }
+        .mode-color.bg-normal { background-color: #1C1C1E; }
+        .mode-color.bg-high { background-color: #FF9F0A; }
+        .mode-color.bg-low { background-color: #FF453A; }
+        .mode-color .bg-val { font-size: 40vw; font-weight: 800; line-height: 1; }
+        .mode-color .bg-dir { font-size: 25vw; line-height: 1; }
         
-        .mode-simple .bg-val { font-size: 15vw; font-weight: 800; }
+        .mode-simple .bg-val { font-size: 25vw; font-weight: 700; }
         
-        /* Main View */
-        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 1rem; }
-        .title-group h1 { margin: 0; font-size: 2rem; color: var(--primary); }
-        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
-        .card { background: var(--card-bg); padding: 1.5rem; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.05); }
+        /* Header */
+        header { 
+            display: flex; 
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 2rem; 
+        }
+        .title-group h1 { 
+            margin: 0; 
+            font-size: 2.4rem; 
+            font-weight: 800;
+            letter-spacing: -1px;
+            color: #FFFFFF;
+        }
+        .title-group p { margin: 0; color: var(--text-muted); font-size: 0.95rem; font-weight: 500; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .card { padding: 1.25rem; transition: transform 0.2s cubic-bezier(0.1, 0, 0.1, 1); }
+        .card:active { transform: scale(0.96); }
         
         .val-high { color: var(--warning); }
         .val-very-high { color: var(--danger); }
         .val-low { color: var(--danger); }
         .val-normal { color: var(--accent); }
         
-        .chart-container { background: var(--card-bg); padding: 1rem; border-radius: 1rem; margin-bottom: 1.5rem; height: 350px; }
+        .chart-container { padding: 1.25rem; margin-bottom: 1.5rem; height: 320px; }
         
-        /* Modal for Care Portal */
-        dialog { background: var(--bg-color); color: var(--text-main); border: 1px solid rgba(255,255,255,0.1); border-radius: 1rem; padding: 2rem; width: 90%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        dialog::backdrop { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
-        input, select { width: 100%; box-sizing: border-box; padding: 0.8rem; margin-bottom: 1rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 0.5rem; font-family: inherit; }
-        button { background: var(--primary); color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 0.5rem; cursor: pointer; font-weight: bold; width: 100%; font-family: inherit; font-size: 1rem; transition: background 0.3s; }
-        button:hover { background: #2563eb; }
-        button.secondary { background: #475569; margin-top: 0.5rem; }
-        button.secondary:hover { background: #334155; }
+        /* Tab Bar */
+        .tab-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: calc(3.8rem + var(--safe-bottom));
+            background: rgba(18, 18, 18, 0.85);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border-top: 0.5px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding-bottom: var(--safe-bottom);
+            z-index: 1000;
+        }
+        .tab-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-decoration: none;
+            color: var(--text-muted);
+            font-size: 0.65rem;
+            font-weight: 600;
+            gap: 5px;
+            flex: 1;
+            padding: 8px 0;
+        }
+        .tab-item.active { color: var(--primary); }
+        .tab-item svg { width: 24px; height: 24px; fill: currentColor; }
+
+        /* Modal Styles */
+        dialog { 
+            background: #1C1C1E; 
+            color: var(--text-main); 
+            border: none;
+            border-radius: 28px; 
+            padding: 2rem; 
+            width: 85%; 
+            max-width: 380px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            margin: 0;
+        }
+        dialog::backdrop { background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); }
         
-        .nav-links a { color: var(--text-muted); text-decoration: none; margin-left: 1rem; padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); font-size: 0.8rem; transition: all 0.3s; }
-        .nav-links a:hover { color: var(--primary); border-color: var(--primary); }
-        .nav-links button.portal-btn { display: inline-block; width: auto; background: var(--accent); padding: 0.5rem 1rem; font-size: 0.8rem; border-radius: 20px; margin-left: 1rem; }
-        .nav-links button.portal-btn:hover { background: #059669; }
-        
-        .status-panel { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(255,255,255,0.05); }
-        .status-item { text-align: center; flex: 1; min-width: 80px; }
-        .status-val { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
-        .status-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
+        input, select { 
+            width: 100%; 
+            padding: 16px; 
+            margin-bottom: 16px; 
+            background: #2C2C2E; 
+            border: none;
+            color: white; 
+            border-radius: 16px; 
+            font-size: 1.05rem;
+            font-weight: 500;
+            box-sizing: border-box;
+            outline: none;
+        }
+        button { 
+            background: var(--primary); 
+            color: white; 
+            border: none; 
+            padding: 16px; 
+            border-radius: 18px; 
+            cursor: pointer; 
+            font-weight: 700; 
+            width: 100%; 
+            font-size: 1.1rem;
+            transition: all 0.2s;
+        }
+        button:active { transform: scale(0.98); opacity: 0.9; }
+        button.secondary { background: #3A3A3C; margin-top: 10px; color: #FFFFFF; }
     </style>
 </head>
 <body>
@@ -86,7 +186,7 @@
         <div class="mode-color {{ bg_color_class }}">
             <div class="bg-val"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span></div>
             <div class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</div>
-            <div class="time local-time-display" data-time="{{ current_entry.date_str }}" style="font-size: 3vw; opacity: 0.7;">{{ current_entry.date_str }}</div>
+            <div class="time local-time-display" data-time="{{ current_entry.date_str }}" style="font-size: 5vw; opacity: 0.8; margin-top: 20px;">{{ current_entry.date_str }}</div>
         </div>
         <script>setTimeout(()=>window.location.reload(), 30000);</script>
         
@@ -94,10 +194,6 @@
         <div class="mode-simple">
             <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
             <div class="local-time-display" data-time="{{ current_entry.date_str }}" style="color: #94a3b8; font-size: 2rem; margin-top: 1rem;">{{ current_entry.date_str }}</div>
-            <div style="margin-top: 2rem; font-size: 1.5rem; background: rgba(255,255,255,0.05); padding: 1rem 2rem; border-radius: 1rem;">
-                <span style="color:var(--primary)">IOB:</span> {{ devicestatus.display_iob|default(0, true) }} U &nbsp;|&nbsp; 
-                <span style="color:var(--accent)">COB:</span> {{ devicestatus.display_cob|default(0, true) }} g
-            </div>
         </div>
         <script>setTimeout(()=>window.location.reload(), 30000);</script>
 
@@ -106,96 +202,59 @@
     <div class="container">
         <header>
             <div class="title-group">
-                <div style="display: flex; align-items: center; gap: 1rem;">
-                    <h1>昕蓉的CGM</h1>
-                    <span id="header-live-bg" style="font-size: 2.5rem; font-weight: bold; background: rgba(0,0,0,0.3); padding: 0.2rem 1rem; border-radius: 1rem; display: none; line-height: 1;"></span>
+                <div style="display: flex; align-items: baseline; gap: 0.8rem;">
+                    <h1 id="dynamic-title">昕蓉的CGM</h1>
+                    <span id="header-live-bg" style="font-size: 1.8rem; font-weight: 800; background: rgba(255,255,255,0.1); padding: 0.3rem 0.8rem; border-radius: 12px; display: none; line-height: 1;"></span>
                 </div>
-                <p>即時血糖視覺化與監控面板</p>
-            </div>
-            <div class="nav-links">
-                <a href="/?view=clock">時鐘</a>
-                <a href="/?view=color">顏色</a>
-                <a href="/?view=simple">極簡</a>
-                <button class="portal-btn" onclick="openSettings()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">⚙️ 設置</button>
-                <button class="portal-btn" id="testLineBtn" style="background: var(--primary);">🧪 模擬接收資料</button>
-                <button class="portal-btn" id="clearSimBtn" style="background: var(--danger);">🧹 清除模擬</button>
-                <button class="portal-btn" onclick="document.getElementById('carePortal').showModal()">➕ 照護日誌</button>
+                <p>即時血糖監控面板</p>
             </div>
         </header>
 
-        {% if play_audio %}
-        <audio src="/static/alert.mp3?t={{ alert.time }}" autoplay></audio>
-        <div style="background: rgba(239, 68, 68, 0.2); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; border: 1px solid var(--danger);">
-            🚨 <strong>警報:</strong> {{ alert.text }}
-        </div>
-        {% endif %}
-
-        <div class="status-panel">
-            <div class="status-item">
-                <div class="status-val">{{ devicestatus.display_iob|default('0.00', true) }} U</div>
-                <div class="status-label">殘留胰島素 (IOB)</div>
-            </div>
-            <div class="status-item">
-                <div class="status-val" style="color: var(--accent);">{{ devicestatus.display_cob|default('0', true) }} g</div>
-                <div class="status-label">殘留碳水 (COB)</div>
-            </div>
-            <div class="status-item">
-                <div class="status-val" style="color: var(--text-main);">{{ devicestatus.uploaderBattery|default('--', true) }}%</div>
-                <div class="status-label">上傳設備 (upbat)</div>
-            </div>
-            <div class="status-item">
-                <div class="status-val" style="color: var(--text-main);">{{ devicestatus.pumpBattery|default('--', true) }}%</div>
-                <div class="status-label">幫浦電量</div>
-            </div>
-        </div>
-
-        <div class="chart-container">
+        <div class="chart-container glass">
             <canvas id="cgmChart"></canvas>
         </div>
 
         <div class="dashboard-grid">
             {% for entry in entries[:6] %}
-                <div class="card">
-                    <div class="local-time-display" data-time="{{ entry.date_str }}" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">{{ entry.date_str }}</div>
-                    <div style="font-size: 2.5rem; font-weight: bold; line-height: 1;" class="{% if entry.bg_value|int > 180 %}val-high{% elif entry.bg_value|int < 70 %}val-low{% else %}val-normal{% endif %}">
-                        <span class="bg-val-num" data-mgdl="{{ entry.bg_value }}">{{ entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ entry.direction }}" style="font-size: 1.5rem">{{ entry.direction }}</span>
+                <div class="card glass">
+                    <div class="local-time-display" data-time="{{ entry.date_str }}" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; font-weight: 600;">{{ entry.date_str }}</div>
+                    <div style="font-size: 2.2rem; font-weight: 800; line-height: 1;" class="{% if entry.bg_value|int > 180 %}val-high{% elif entry.bg_value|int < 70 %}val-low{% else %}val-normal{% endif %}">
+                        <span class="bg-val-num" data-mgdl="{{ entry.bg_value }}">{{ entry.bg_value }}</span> 
+                        <span class="bg-dir" data-dir="{{ entry.direction }}" style="font-size: 1.4rem">{{ entry.direction }}</span>
                     </div>
                 </div>
             {% endfor %}
             {% if not entries %}
-                <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 3rem; background: var(--card-bg); border-radius: 1rem;">
-                    目前還沒有收到任何血糖資料。<br>請確保您的上傳器 (xDrip+ 等) 設定正確。
+                <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 3rem; background: var(--card-bg); border-radius: 24px; border: 1px solid var(--glass-border);">
+                    目前還沒有收到任何血糖資料。
                 </div>
             {% endif %}
         </div>
     </div>
+    {% endif %}
 
-    <!-- Care Portal Modal -->
-    <dialog id="carePortal">
-        <h2 style="margin-top: 0; color: var(--primary);">紀錄照護日誌</h2>
-        <form id="treatmentForm" method="dialog">
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">事件類型</label>
-            <select id="eventType">
-                <option value="Meal Bolus">用餐 (Meal Bolus)</option>
-                <option value="Correction Bolus">校正 (Correction Bolus)</option>
-                <option value="Snack">點心 (Snack)</option>
-                <option value="Sensor Change">換感測器 (Sensor Change)</option>
-                <option value="Exercise">運動 (Exercise)</option>
-            </select>
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">碳水化合物 (g)</label>
-            <input type="number" id="carbs" value="0" step="1">
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">胰島素 (U)</label>
-            <input type="number" id="insulin" value="0" step="0.1">
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">備註</label>
-            <input type="text" id="notes" placeholder="例如: 義大利麵...">
-            
-            <button type="button" onclick="submitTreatment()">送出紀錄</button>
-            <button type="button" class="secondary" onclick="document.getElementById('carePortal').close()">取消</button>
-        </form>
-    </dialog>
+    <nav class="tab-bar">
+        <a href="/" class="tab-item {% if view_mode == 'main' %}active{% endif %}">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            首頁
+        </a>
+        <a href="/?view=clock" class="tab-item {% if view_mode == 'clock' %}active{% endif %}">
+            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+            時鐘
+        </a>
+        <a href="/?view=simple" class="tab-item {% if view_mode == 'simple' %}active{% endif %}">
+            <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+            極簡
+        </a>
+        <a href="/?view=color" class="tab-item {% if view_mode == 'color' %}active{% endif %}">
+            <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9s1.5.67 1.5 1.5S7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+            顏色
+        </a>
+        <a href="javascript:void(0)" onclick="openSettings()" class="tab-item">
+            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+            設定
+        </a>
+    </nav>
 
     <!-- Settings Modal -->
     <dialog id="settingsModal">
@@ -229,93 +288,8 @@
     </dialog>
 
     <script>
-        async function submitTreatment() {
-            let secret = localStorage.getItem('api_secret');
-            if (!secret) {
-                secret = prompt("首次使用需輸入 API Secret 以取得寫入權限:");
-                if (!secret) return;
-                
-                // Nightscout 相容：使用 SHA1 hash
-                const encoder = new TextEncoder();
-                const data = encoder.encode(secret);
-                const hashBuffer = await crypto.subtle.digest('SHA-1', data);
-                const hashArray = Array.from(new Uint8Array(hashBuffer));
-                secret = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                localStorage.setItem('api_secret', secret);
-            }
-
-            const payload = {
-                eventType: document.getElementById('eventType').value,
-                carbs: parseFloat(document.getElementById('carbs').value) || 0,
-                insulin: parseFloat(document.getElementById('insulin').value) || 0,
-                notes: document.getElementById('notes').value,
-                created_at: new Date().toISOString()
-            };
-
-            try {
-                const res = await fetch('/api/v1/treatments', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'api-secret': secret },
-                    body: JSON.stringify([payload])
-                });
-                if (res.ok) {
-                    alert('紀錄成功！');
-                    document.getElementById('carePortal').close();
-                    window.location.reload();
-                } else if (res.status === 401) {
-                    alert('API Secret 錯誤！');
-                    localStorage.removeItem('api_secret');
-                } else {
-                    alert('伺服器發生錯誤');
-                }
-            } catch(e) {
-                alert('網路連線錯誤');
-            }
-        }
-
-        document.getElementById('testLineBtn')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const btn = this;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '發送中...';
-            btn.disabled = true;
-            
-            fetch('/api/v1/test_line', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    btn.innerHTML = '✅ 已發送！';
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                })
-                .catch(err => {
-                    alert("測試失敗，請檢查伺服器是否正常運作");
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                });
-        });
-
-        document.getElementById('clearSimBtn')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            if(confirm('確定要清除所有「模擬」產生的血糖資料嗎？\n這不會影響您真實上傳的紀錄。')) {
-                const btn = this;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '清除中...';
-                btn.disabled = true;
-                
-                fetch('/api/v1/clear_simulation', { method: 'POST' })
-                    .then(() => window.location.reload())
-                    .catch(() => {
-                        alert("清除失敗");
-                        btn.innerHTML = originalText;
-                        btn.disabled = false;
-                    });
-            }
-        });
-
         const timeFormat = localStorage.getItem('time_format') || '24';
         
-        // Format times to local HH:MM string
         const formatLocalTime = (isoStr) => {
             if (!isoStr) return "";
             let d = new Date(isoStr);
@@ -331,114 +305,75 @@
             {% endfor %}
         ];
         
-        const treatmentData = [
-            {% for t in treatments %}
-                {% if t.carbs > 0 or t.insulin > 0 %}
-                { 
-                    time: formatLocalTime("{{ t.created_at }}"), 
-                    carbs: {{ t.carbs }}, 
-                    insulin: {{ t.insulin }} 
-                }{% if not loop.last %},{% endif %}
-                {% endif %}
-            {% endfor %}
-        ];
-
         const labels = rawData.map(d => d.time);
         const dataValues = rawData.map(d => d.value);
-
-        // Chart.js Annotation Plugin
-        let annotations = {};
-        treatmentData.forEach((t, i) => {
-            if (labels.includes(t.time)) {
-                let content = [];
-                if (t.carbs > 0) content.push(`🍔 ${t.carbs}g`);
-                if (t.insulin > 0) content.push(`💉 ${t.insulin}U`);
-                
-                annotations[`line${i}`] = {
-                    type: 'line',
-                    xMin: t.time,
-                    xMax: t.time,
-                    borderColor: (localStorage.getItem('theme') === 'colorblind') ? '#0c7bdc' : '#10b981',
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    label: {
-                        display: true,
-                        content: content.join(' | '),
-                        position: 'start',
-                        backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                        color: '#f8fafc',
-                        font: { size: 10 }
-                    }
-                };
-            }
-        });
 
         const ctx = document.getElementById('cgmChart')?.getContext('2d');
         if (ctx) {
             const tTheme = localStorage.getItem('theme') || 'default';
-            const cHigh = tTheme === 'colorblind' ? '#ffc20a' : '#f59e0b';
-            const cLow = tTheme === 'colorblind' ? '#d35f27' : '#ef4444';
-            const cNormal = tTheme === 'colorblind' ? '#0c7bdc' : '#10b981';
+            const cHigh = tTheme === 'colorblind' ? '#FF9F0A' : '#FF9F0A';
+            const cLow = tTheme === 'colorblind' ? '#FF453A' : '#FF453A';
+            const cNormal = tTheme === 'colorblind' ? '#0A84FF' : '#32D74B';
             
             window.cgmChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: '血糖值 (mg/dL)',
-                    data: dataValues,
-                    borderColor: tTheme === 'colorblind' ? '#0c7bdc' : '#38bdf8',
-                    backgroundColor: tTheme === 'colorblind' ? 'rgba(12, 123, 220, 0.1)' : 'rgba(56, 189, 248, 0.1)',
-                    borderWidth: 3,
-                    pointBackgroundColor: dataValues.map(v => v > 180 ? cHigh : (v < 70 ? cLow : cNormal)),
-                    pointBorderColor: '#0f172a',
-                    pointBorderWidth: 2,
-                    pointRadius: 4,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    annotation: { annotations: annotations },
-                    tooltip: { mode: 'index', intersect: false }
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '血糖值',
+                        data: dataValues,
+                        borderColor: '#0A84FF',
+                        backgroundColor: 'rgba(10, 132, 255, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: dataValues.map(v => v > 180 ? cHigh : (v < 70 ? cLow : cNormal)),
+                        pointBorderColor: '#000000',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        fill: true,
+                        tension: 0.4
+                    }]
                 },
-                scales: {
-                    y: { 
-                        suggestedMin: 40,
-                        suggestedMax: 300,
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
-                        ticks: { color: '#94a3b8' } 
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { 
+                            mode: 'index', 
+                            intersect: false,
+                            backgroundColor: 'rgba(28, 28, 30, 0.9)',
+                            titleFont: { size: 14 },
+                            bodyFont: { size: 14 },
+                            padding: 12,
+                            cornerRadius: 12
+                        }
                     },
-                    x: { grid: { display: false }, ticks: { color: '#94a3b8', maxTicksLimit: 10 } }
+                    scales: {
+                        y: { 
+                            suggestedMin: 40,
+                            suggestedMax: 300,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                            ticks: { color: '#8E8E93', font: { weight: '600' } } 
+                        },
+                        x: { grid: { display: false }, ticks: { color: '#8E8E93', maxTicksLimit: 6, font: { weight: '600' } } }
+                    }
                 }
-            }
-        });
+            });
         }
 
-    </script>
-    {% endif %}
-
-    <!-- 全局共用邏輯 (單位切換、箭頭符號、標題列更新) -->
-    <script>
         let currentUnit = localStorage.getItem('bg_unit') || 'mg/dL';
         let customTitle = localStorage.getItem('custom_title') || '昕蓉的CGM';
         let currentTheme = localStorage.getItem('theme') || 'default';
 
-        // Apply Custom Title
-        const h1 = document.querySelector('.title-group h1');
+        const h1 = document.getElementById('dynamic-title');
         if (h1) h1.innerText = customTitle;
         document.title = customTitle;
 
-        // Apply Theme
         if (currentTheme === 'colorblind') {
-            document.documentElement.style.setProperty('--warning', '#ffc20a'); 
-            document.documentElement.style.setProperty('--danger', '#d35f27');  
-            document.documentElement.style.setProperty('--accent', '#0c7bdc');  
-            document.documentElement.style.setProperty('--primary', '#0c7bdc');
+            document.documentElement.style.setProperty('--warning', '#FF9F0A'); 
+            document.documentElement.style.setProperty('--danger', '#FF453A');  
+            document.documentElement.style.setProperty('--accent', '#0A84FF');  
+            document.documentElement.style.setProperty('--primary', '#0A84FF');
         }
 
         function openSettings() {
@@ -452,28 +387,23 @@
         function saveSettings() {
             localStorage.setItem('bg_unit', document.getElementById('settingUnit').value);
             localStorage.setItem('time_format', document.getElementById('settingTimeFormat').value);
-            localStorage.setItem('custom_title', document.getElementById('settingTitle').value || 'Nightscout');
+            localStorage.setItem('custom_title', document.getElementById('settingTitle').value || '昕蓉的CGM');
             localStorage.setItem('theme', document.getElementById('settingTheme').value);
             document.getElementById('settingsModal').close();
             window.location.reload();
         }
 
         function formatBG(valMgdl) {
-            if (currentUnit === 'mmol/L') {
-                return parseFloat((valMgdl / 18.0182).toFixed(1));
-            }
+            if (currentUnit === 'mmol/L') return parseFloat((valMgdl / 18.0182).toFixed(1));
             return parseFloat(valMgdl);
         }
 
         function applyUnit() {
             document.querySelectorAll('.bg-val-num').forEach(el => {
                 const mgdl = parseFloat(el.getAttribute('data-mgdl'));
-                if (!isNaN(mgdl)) {
-                    el.innerText = formatBG(mgdl);
-                }
+                if (!isNaN(mgdl)) el.innerText = formatBG(mgdl);
             });
             
-            // 將趨勢文字轉換為箭頭符號
             const getTrendArrow = (dir) => {
                 const arrows = {
                     'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗',
@@ -484,12 +414,9 @@
 
             document.querySelectorAll('.bg-dir').forEach(el => {
                 const dir = el.getAttribute('data-dir');
-                if (dir) {
-                    el.innerText = getTrendArrow(dir);
-                }
+                if (dir) el.innerText = getTrendArrow(dir);
             });
 
-            // 更新網頁分頁標題與主畫面大標題旁顯示最新血糖與箭頭
             const latestEntryEl = document.querySelector('.bg-val-num');
             const latestDirEl = document.querySelector('.bg-dir');
             
@@ -498,60 +425,25 @@
                 if (!isNaN(rawVal)) {
                     const bgVal = formatBG(rawVal);
                     const arrow = getTrendArrow(latestDirEl.getAttribute('data-dir'));
-                    
                     document.title = `${bgVal} ${arrow} | ${customTitle}`;
-                    
                     const headerLiveBg = document.getElementById('header-live-bg');
                     if (headerLiveBg) {
                         headerLiveBg.style.display = 'inline-block';
-                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.45em; font-weight: normal; opacity: 0.8; margin-left: 4px; vertical-align: middle;">${currentUnit}</span>`;
+                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.5em; font-weight: 500; opacity: 0.6; margin-left: 4px;">${currentUnit}</span>`;
                         if (rawVal > 180) headerLiveBg.style.color = 'var(--warning)';
                         else if (rawVal < 70) headerLiveBg.style.color = 'var(--danger)';
                         else headerLiveBg.style.color = 'var(--accent)';
                     }
                 }
-            } else {
-                document.title = customTitle;
-                const headerLiveBg = document.getElementById('header-live-bg');
-                if (headerLiveBg) headerLiveBg.style.display = 'none';
-            }
-            
-            const chart = typeof Chart !== 'undefined' ? Chart.getChart("cgmChart") : null;
-            if (chart && typeof rawData !== 'undefined') {
-                chart.data.datasets[0].label = `血糖值 (${currentUnit})`;
-                chart.data.datasets[0].data = rawData.map(d => formatBG(d.value));
-                
-                if (!chart.options.scales.y.title) {
-                    chart.options.scales.y.title = {};
-                }
-                chart.options.scales.y.title.display = true;
-                chart.options.scales.y.title.text = currentUnit;
-                chart.options.scales.y.title.color = '#94a3b8';
-                
-                if (currentUnit === 'mmol/L') {
-                    chart.options.scales.y.suggestedMin = 2.0;
-                    chart.options.scales.y.suggestedMax = 16.0;
-                } else {
-                    chart.options.scales.y.suggestedMin = 40;
-                    chart.options.scales.y.suggestedMax = 300;
-                }
-                
-                chart.update();
             }
         }
 
         applyUnit();
-
-        // 轉換所有時間顯示為本地時間
         document.querySelectorAll('.local-time-display').forEach(el => {
             const isoStr = el.getAttribute('data-time');
             if (!isoStr) return;
             const d = new Date(isoStr);
-            if (!isNaN(d.getTime())) {
-                el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: (localStorage.getItem('time_format') || '24') === '12'});
-            } else {
-                el.innerText = isoStr.includes('T') ? isoStr.split('T')[1].substring(0, 5) : isoStr.substring(isoStr.length - 8, isoStr.length - 3);
-            }
+            if (!isNaN(d.getTime())) el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
         });
     </script>
 </body>
