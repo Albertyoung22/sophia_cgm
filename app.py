@@ -43,20 +43,25 @@ def log_all():
 @app.route("/callback", methods=['POST'])
 def line_callback():
     body = request.get_json()
+    print(f"📩 收到 Webhook 事件: {json.dumps(body)}")
     try:
         for event in body.get('events', []):
             if event['type'] == 'message' and event['message']['type'] == 'text':
                 user_msg = event['message']['text'].strip()
                 reply_token = event['replyToken']
+                print(f"💬 使用者訊息: {user_msg}")
                 
                 if user_msg == "血糖" or user_msg.lower() == "bg":
                     db = database.get_db()
                     entry = db.entries.find_one(sort=[("dateString", -1)])
                     if entry:
                         msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {entry['dateString']}"
+                        print(f"✅ 找到數據: {entry['sgv']}")
                     else:
                         msg = "資料庫目前沒有任何血糖紀錄。"
+                        print("⚠️ 資料庫是空的")
                     reply_line_message(reply_token, msg)
+                    print("📤 已送出回覆")
     except Exception as e:
         print(f"❌ Webhook 錯誤: {e}")
     return 'OK'
