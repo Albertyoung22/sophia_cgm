@@ -1,30 +1,31 @@
-const CACHE_NAME = 'cgm-pwa-v1';
+const CACHE_NAME = 'cgm-pwa-v2';
 const ASSETS = [
-  '/',
   '/static/manifest.json',
   '/static/icon.svg'
 ];
 
-// 安裝 Service Worker
+// 安裝
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
 });
 
-// 激活 Service Worker
+// 激活 (清理舊快取)
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)));
+    })
+  );
 });
 
-// 攔截請求
+// 攔截請求：網路優先 (Network First)
+// 確保首頁數據永遠是最新的
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        return response || fetch(event.request);
-      })
+    fetch(event.request).catch(() => {
+      return caches.match(event.request);
+    })
   );
 });
