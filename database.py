@@ -1,59 +1,43 @@
-import sqlite3
 import os
+from pymongo import MongoClient
 from datetime import datetime
 
-DB_FILE = 'cgm_data.db'
+# 從環境變數讀取 MongoDB 連接字串，預設為本地端 (測試用)
+MONGO_URI = os.environ.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or "mongodb://localhost:27017/nightscout"
+DB_NAME = "nightscout"
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
+client = None
+db = None
+
+def get_db():
+    global client, db
+    if db is None:
+        client = MongoClient(MONGO_URI)
+        # 從 URI 中提取資料庫名稱，如果沒有則用預設值
+        db = client.get_default_database() if client.get_default_database() else client[DB_NAME]
+    return db
 
 def init_db():
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    # 血糖紀錄表
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sgv INTEGER,
-            direction TEXT,
-            dateString TEXT,
-            device TEXT,
-            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # 治療/照護日誌表 (打針、吃糖、運動、換感測器等)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS treatments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            eventType TEXT,
-            carbs REAL DEFAULT 0,
-            insulin REAL DEFAULT 0,
-            notes TEXT,
-            created_at TEXT,
-            enteredBy TEXT
-        )
-    ''')
-    
-    # 設備狀態表 (電量、閉環預測等)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS devicestatus (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            uploaderBattery INTEGER,
-            pumpBattery INTEGER,
-            iob REAL,
-            cob REAL,
-            created_at TEXT
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+    # MongoDB 不需要像 SQL 那樣預先 Create Table，寫入時會自動建立
+    # 但我們可以預先建立索引 (Index) 來加速查詢
+    db = get_db()
+    db.entries.create_index([("dateString", -1)])
+    db.treatments.create_index([("created_at", -1)])
+    db.devicestatus.create_index([("created_at", -1)])
+    print("MongoDB indexes initialized.")
+
+def get_entries_collection():
+    return get_db().entries
+
+def get_treatments_collection():
+    return get_db().treatments
+
+def get_devicestatus_collection():
+    return get_db().devicestatus
+
+# 為了保持與舊程式碼的部分相容性 (雖然邏輯會變)
+def get_db_connection():
+    return get_db()
 
 if __name__ == '__main__':
     init_db()
-    print("Database initialized successfully.")

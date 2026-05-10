@@ -3,3 +3,5 @@ requests
 waitress
 edge-tts
 gunicorn
+pymongo
+dnspython
