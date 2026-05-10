@@ -97,23 +97,42 @@ def dexcom_post():
 # ---------------------------------------------------------
 def process_entries(items):
     if not items: return
+    
+    # 找出這批資料中最新的一筆（用來發送 LINE）
+    latest_entry = None
+    max_date = ""
+
     conn = database.get_db_connection()
     c = conn.cursor()
+    
     for entry in items:
-        # 廣泛搜尋可能包含血糖值的欄位
         val = entry.get('sgv') or entry.get('mbg') or entry.get('glucose') or entry.get('value') or entry.get('Value')
         if not val: continue
+        
         dir_str = entry.get('direction') or entry.get('Direction') or 'Flat'
         date_str = entry.get('dateString') or datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
         
+        # 存入資料庫
         c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)', (val, dir_str, date_str, 'App'))
-        try:
-            msg = f"【血糖紀錄】\n數值: {val}\n趨勢: {dir_str}\n時間: {date_str}"
-            send_line_message(msg)
-        except: pass
+        
+        # 追蹤最新的一筆
+        if date_str > max_date:
+            max_date = date_str
+            latest_entry = {"val": val, "dir": dir_str, "date": date_str}
+
     conn.commit()
     conn.close()
-    print(f"✅ 成功處理資料")
+    
+    # 只針對最新的一筆發送 LINE
+    if latest_entry:
+        try:
+            msg = f"【血糖紀錄】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
+            send_line_message(msg)
+            print(f"✅ 成功處理資料並發送通知: {latest_entry['val']}")
+        except:
+            print(f"✅ 成功處理資料 (LINE 發送失敗)")
+    else:
+        print(f"✅ 成功處理資料 (無有效數值)")
 
 # ---------------------------------------------------------
 # UI 網頁
