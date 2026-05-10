@@ -9,28 +9,60 @@ import json
 app = Flask(__name__)
 database.init_db()
 
-# 預設密碼
+# 預設密碼與 Token
 API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
-EXPECTED_HASH = hashlib.sha1(API_SECRET.encode('utf-8')).hexdigest()
+LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
 
+# 主動發送廣播訊息
 def send_line_message(text):
-    token = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=")
-    if not token: return
+    if not LINE_ACCESS_TOKEN: return
     url = "https://api.line.me/v2/bot/message/broadcast"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
     data = {"messages": [{"type": "text", "text": text}]}
     try: requests.post(url, headers=headers, json=data, timeout=5)
     except: pass
+
+# 回覆特定訊息
+def reply_line_message(reply_token, text):
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    data = {
+        "replyToken": reply_token,
+        "messages": [{"type": "text", "text": text}]
+    }
+    requests.post(url, headers=headers, json=data, timeout=5)
 
 @app.before_request
 def log_all():
     if not request.path.startswith('/static'):
         print(f"📡 [連線請求] {request.method} {request.path}")
-        if request.method == 'POST':
-            print(f"📦 [POST 內容] {request.get_data(as_text=True)}")
 
 # ---------------------------------------------------------
-# 1. 寬容的 Nightscout 端點 (原本的模式)
+# LINE Webhook (處理使用者輸入)
+# ---------------------------------------------------------
+@app.route("/callback", methods=['POST'])
+def line_callback():
+    body = request.get_json()
+    try:
+        for event in body.get('events', []):
+            if event['type'] == 'message' and event['message']['type'] == 'text':
+                user_msg = event['message']['text'].strip()
+                reply_token = event['replyToken']
+                
+                if user_msg == "血糖" or user_msg.lower() == "bg":
+                    db = database.get_db()
+                    entry = db.entries.find_one(sort=[("dateString", -1)])
+                    if entry:
+                        msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {entry['dateString']}"
+                    else:
+                        msg = "資料庫目前沒有任何血糖紀錄。"
+                    reply_line_message(reply_token, msg)
+    except Exception as e:
+        print(f"❌ Webhook 錯誤: {e}")
+    return 'OK'
+
+# ---------------------------------------------------------
+# Nightscout 標準端點
 # ---------------------------------------------------------
 @app.route('/api/v1/status', methods=['GET'])
 @app.route('/api/v1/status.json', methods=['GET'])
@@ -42,8 +74,7 @@ def get_status():
         "serverTimeEpoch": int(now.timestamp() * 1000),
         "authorized": True, "apiEnabled": True,
         "settings": {
-            "units": "mg/dL", 
-            "timeFormat": 24,
+            "units": "mg/dL", "timeFormat": 24,
             "thresholds": {"bgHigh": 260, "bgTargetTop": 180, "bgTargetBottom": 80, "bgLow": 55},
             "enable": ["careportal", "rawbg", "iob"]
         }
@@ -53,99 +84,71 @@ def get_status():
 def verify_auth():
     return jsonify({
         "status": 200,
-        "message": {
-            "canRead": True, "canWrite": True, "isAdmin": True,
-            "message": "OK", "rolefound": "FOUND", "permissions": "ROLE"
-        }
+        "message": {"canRead": True, "canWrite": True, "isAdmin": True, "message": "OK", "rolefound": "FOUND", "permissions": "ROLE"}
     })
 
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
 @app.route('/api/v1/entries.json', methods=['GET', 'POST'])
-@app.route('/api/v1/entries/', methods=['GET', 'POST'])
 def entries_api():
+    db = database.get_db()
     if request.method == 'GET':
-        conn = database.get_db_connection()
-        rows = conn.execute('SELECT sgv, direction, dateString FROM entries ORDER BY dateString DESC LIMIT 1').fetchall()
-        conn.close()
-        return jsonify([dict(r) for r in rows])
+        entry = db.entries.find_one(sort=[("dateString", -1)])
+        if entry:
+            entry['_id'] = str(entry['_id'])
+            return jsonify([entry])
+        return jsonify([])
     
-    # 接收資料邏輯
     data = request.get_json(silent=True) or {}
     items = [data] if isinstance(data, dict) else data
     process_entries(items)
     return jsonify({"status": "success"}), 200
 
-# ---------------------------------------------------------
-# 2. 模擬 Dexcom Share 端點 (歐態 App 常用的備選方案)
-# ---------------------------------------------------------
-@app.route('/ShareV1/login/loginPublisherLatestPublisherId', methods=['POST'])
-def dexcom_login():
-    return jsonify("00000000-0000-0000-0000-000000000000") # 模擬 Session ID
-
-@app.route('/ShareV1/publisher/latestPublisherId', methods=['POST'])
-def dexcom_latest():
-    return jsonify("00000000-0000-0000-0000-000000000000")
-
+# 模擬 Dexcom 端點
 @app.route('/ShareV1/publisher/postPublisherLatestPublisherId', methods=['POST'])
 def dexcom_post():
     data = request.get_json(silent=True) or {}
     process_entries([data])
     return "OK", 200
 
-# ---------------------------------------------------------
-# 核心處理邏輯
-# ---------------------------------------------------------
 def process_entries(items):
     if not items: return
-    
-    # 找出這批資料中最新的一筆（用來發送 LINE）
+    db = database.get_db()
     latest_entry = None
     max_date = ""
 
-    conn = database.get_db_connection()
-    c = conn.cursor()
-    
     for entry in items:
         val = entry.get('sgv') or entry.get('mbg') or entry.get('glucose') or entry.get('value') or entry.get('Value')
         if not val: continue
-        
         dir_str = entry.get('direction') or entry.get('Direction') or 'Flat'
         date_str = entry.get('dateString') or datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
         
-        # 存入資料庫
-        c.execute('INSERT INTO entries (sgv, direction, dateString, device) VALUES (?, ?, ?, ?)', (val, dir_str, date_str, 'App'))
-        
-        # 追蹤最新的一筆
+        try: val = int(val)
+        except: pass
+
+        mongo_entry = {
+            "sgv": val, "direction": dir_str, "dateString": date_str, "device": "App", "type": "sgv",
+            "date": int(datetime.fromisoformat(date_str.replace('Z', '+00:00')).timestamp() * 1000) if 'T' in date_str else int(datetime.now().timestamp() * 1000)
+        }
+        db.entries.insert_one(mongo_entry)
         if date_str > max_date:
             max_date = date_str
             latest_entry = {"val": val, "dir": dir_str, "date": date_str}
 
-    conn.commit()
-    conn.close()
-    
-    # 只針對最新的一筆發送 LINE
     if latest_entry:
-        try:
-            msg = f"【血糖紀錄】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
-            send_line_message(msg)
-            print(f"✅ 成功處理資料並發送通知: {latest_entry['val']}")
-        except:
-            print(f"✅ 成功處理資料 (LINE 發送失敗)")
-    else:
-        print(f"✅ 成功處理資料 (無有效數值)")
+        msg = f"【自動推播】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
+        send_line_message(msg)
+        print(f"✅ 處理完成並推播: {latest_entry['val']}")
 
-# ---------------------------------------------------------
-# UI 網頁
-# ---------------------------------------------------------
 @app.route('/')
 def home():
-    conn = database.get_db_connection()
-    rows = conn.execute('SELECT * FROM entries ORDER BY dateString DESC LIMIT 50').fetchall()
-    entries = [dict(r) for r in rows]
-    for d in entries:
-        d['bg_value'] = d['sgv']
-        d['date_str'] = d['dateString']
-    conn.close()
+    db = database.get_db()
+    cursor = db.entries.find(sort=[("dateString", -1)]).limit(50)
+    entries = []
+    for doc in cursor:
+        doc['_id'] = str(doc['_id'])
+        doc['bg_value'] = doc.get('sgv', 0)
+        doc['date_str'] = doc.get('dateString', '')
+        entries.append(doc)
     return render_template('index.html', entries=entries, chart_data=list(reversed(entries)))
 
 if __name__ == '__main__':
