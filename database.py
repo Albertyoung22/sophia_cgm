@@ -14,7 +14,13 @@ def get_db():
     if db is None:
         client = MongoClient(MONGO_URI)
         # 從 URI 中提取資料庫名稱，如果沒有則用預設值
-        db = client.get_default_database() if client.get_default_database() else client[DB_NAME]
+        try:
+            db = client.get_default_database()
+        except:
+            db = None
+            
+        if db is None:
+            db = client[DB_NAME]
     return db
 
 def init_db():
