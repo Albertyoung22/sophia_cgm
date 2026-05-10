@@ -1,41 +1,30 @@
-const CACHE_NAME = 'cgm-receiver-v1';
-const urlsToCache = [
+const CACHE_NAME = 'cgm-pwa-v1';
+const ASSETS = [
   '/',
-  '/static/icon.svg',
-  '/manifest.json'
+  '/static/manifest.json',
+  '/static/icon.svg'
 ];
 
-self.addEventListener('install', event => {
+// 安裝 Service Worker
+self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then((cache) => cache.addAll(ASSETS))
       .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
-  );
+// 激活 Service Worker
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('fetch', event => {
-  // 如果是 API 請求或 TTS 語音檔，直接透過網路抓取
-  if (event.request.url.includes('/api/') || event.request.url.includes('.mp3')) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-  
-  // 其他資源（如網頁）採取 Network First 策略：優先用最新資料，斷線才用快取
+// 攔截請求
+self.addEventListener('fetch', (event) => {
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    caches.match(event.request)
+      .then((response) => {
+        return response || fetch(event.request);
+      })
   );
 });

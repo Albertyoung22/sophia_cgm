@@ -156,5 +156,13 @@ def home():
         entries.append(doc)
     return render_template('index.html', entries=entries, chart_data=list(reversed(entries)))
 
+@app.route('/manifest.json')
+def serve_manifest():
+    return app.send_static_file('manifest.json')
+
+@app.route('/sw.js')
+def serve_sw():
+    return app.send_static_file('sw.js')
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
