@@ -35,18 +35,28 @@ def log_all():
 @app.route('/api/v1/status', methods=['GET'])
 @app.route('/api/v1/status.json', methods=['GET'])
 def get_status():
+    now = datetime.now(timezone.utc)
     return jsonify({
-        "status": "ok", "name": "Nightscout", "version": "14.2.2",
-        "serverTime": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+        "status": "ok", "name": "nightscout", "version": "15.0.3",
+        "serverTime": now.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+        "serverTimeEpoch": int(now.timestamp() * 1000),
         "authorized": True, "apiEnabled": True,
-        "settings": {"units": "mg/dL", "timeFormat": 24}
+        "settings": {
+            "units": "mg/dL", 
+            "timeFormat": 24,
+            "thresholds": {"bgHigh": 260, "bgTargetTop": 180, "bgTargetBottom": 80, "bgLow": 55},
+            "enable": ["careportal", "rawbg", "iob"]
+        }
     })
 
 @app.route('/api/v1/verifyauth', methods=['GET'])
 def verify_auth():
     return jsonify({
-        "canRead": True, "canWrite": True, "isAdmin": True,
-        "message": "OK", "rolefound": "FOUND", "permissions": "ROLE", "authorized": True
+        "status": 200,
+        "message": {
+            "canRead": True, "canWrite": True, "isAdmin": True,
+            "message": "OK", "rolefound": "FOUND", "permissions": "ROLE"
+        }
     })
 
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
