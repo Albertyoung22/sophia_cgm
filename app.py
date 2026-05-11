@@ -15,12 +15,17 @@ LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAd
 
 # 主動發送廣播訊息
 def send_line_message(text):
-    if not LINE_ACCESS_TOKEN: return
+    if not LINE_ACCESS_TOKEN: 
+        print("[LINE] Skip: No Token")
+        return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
     data = {"messages": [{"type": "text", "text": text}]}
-    try: requests.post(url, headers=headers, json=data, timeout=5)
-    except: pass
+    try: 
+        response = requests.post(url, headers=headers, json=data, timeout=5)
+        print(f"[LINE] Broadcast status: {response.status_code}")
+    except Exception as e:
+        print(f"[LINE] Error: {e}")
 
 # 回覆特定訊息
 def reply_line_message(reply_token, text):
@@ -134,10 +139,12 @@ def process_entries(items):
             "sgv": val, "direction": dir_str, "dateString": date_str, "device": "App", "type": "sgv",
             "date": int(datetime.fromisoformat(date_str.replace('Z', '+00:00')).timestamp() * 1000) if 'T' in date_str else int(datetime.now().timestamp() * 1000)
         }
-        db.entries.insert_one(mongo_entry)
-        if date_str > max_date:
-            max_date = date_str
-            latest_entry = {"val": val, "dir": dir_str, "date": date_str}
+        # 檢查是否已存在，避免重複寫入與重複推播
+        if not db.entries.find_one({"dateString": date_str, "sgv": val}):
+            db.entries.insert_one(mongo_entry)
+            if date_str > max_date:
+                max_date = date_str
+                latest_entry = {"val": val, "dir": dir_str, "date": date_str}
 
     if latest_entry:
         msg = f"【自動推播】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
