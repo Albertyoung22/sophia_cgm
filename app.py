@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template
 import hashlib
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import requests
 import database
 import json
@@ -21,11 +21,14 @@ def send_line_message(text):
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
     data = {"messages": [{"type": "text", "text": text}]}
+    import sys
     try: 
         response = requests.post(url, headers=headers, json=data, timeout=5)
         print(f"[LINE] Broadcast status: {response.status_code}")
+        sys.stdout.flush()
     except Exception as e:
         print(f"[LINE] Error: {e}")
+        sys.stdout.flush()
 
 # 回覆特定訊息
 def reply_line_message(reply_token, text):
@@ -40,7 +43,9 @@ def reply_line_message(reply_token, text):
 @app.before_request
 def log_all():
     if not request.path.startswith('/static'):
+        import sys
         print(f"[Connection] {request.method} {request.path}")
+        sys.stdout.flush()
 
 # ---------------------------------------------------------
 # LINE Webhook (處理使用者輸入)
@@ -140,16 +145,30 @@ def process_entries(items):
             "date": int(datetime.fromisoformat(date_str.replace('Z', '+00:00')).timestamp() * 1000) if 'T' in date_str else int(datetime.now().timestamp() * 1000)
         }
         # 檢查是否已存在，避免重複寫入與重複推播
-        if not db.entries.find_one({"dateString": date_str, "sgv": val}):
+        exists = db.entries.find_one({"dateString": date_str, "sgv": val})
+        if not exists:
+            print(f"[Database] New entry detected: {val} mg/dL at {date_str}")
             db.entries.insert_one(mongo_entry)
             if date_str > max_date:
                 max_date = date_str
                 latest_entry = {"val": val, "dir": dir_str, "date": date_str}
+        else:
+            print(f"[Database] Duplicate ignored: {val} mg/dL at {date_str}")
+
+    import sys
+    sys.stdout.flush()
 
     if latest_entry:
-        msg = f"【自動推播】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
+        # 使用當前在地時間 (UTC+8) 顯示在 LINE 上
+        local_time = datetime.now(timezone(timedelta(hours=8))).strftime('%H:%M')
+
+        msg = f"【目前血糖】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
         send_line_message(msg)
-        print(f"[Success] Processed and broadcasted: {latest_entry['val']}")
+        print(f"[Success] Broadcast triggered: {latest_entry['val']} at {local_time}")
+        sys.stdout.flush()
+    else:
+        print("[Process] No new entries found to broadcast.")
+        sys.stdout.flush()
 
 @app.route('/')
 def home():
