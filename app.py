@@ -135,10 +135,25 @@ def process_entries(items):
         val = entry.get('sgv') or entry.get('mbg') or entry.get('glucose') or entry.get('value') or entry.get('Value')
         if not val: continue
         dir_str = entry.get('direction') or entry.get('Direction') or 'Flat'
-        date_str = entry.get('dateString') or datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-        
         try: val = int(val)
         except: pass
+
+        # 處理日期字串與時區
+        now_utc = datetime.now(timezone.utc)
+        if 'dateString' in entry:
+            try:
+                # 嘗試解析進來的時間
+                dt_in = datetime.fromisoformat(entry['dateString'].replace('Z', '+00:00'))
+                # 如果進來的時間比現在快超過 1 分鐘，則強制使用伺服器時間 (修正手機時間不準的問題)
+                if dt_in > now_utc + timedelta(minutes=1):
+                    print(f"[Time Fix] Incoming time {entry['dateString']} is in future! Adjusting to server time.")
+                    date_str = now_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+                else:
+                    date_str = entry['dateString']
+            except:
+                date_str = entry.get('dateString') or now_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        else:
+            date_str = now_utc.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
         mongo_entry = {
             "sgv": val, "direction": dir_str, "dateString": date_str, "device": "App", "type": "sgv",
@@ -159,8 +174,8 @@ def process_entries(items):
     sys.stdout.flush()
 
     if latest_entry:
-        # 使用當前在地時間 (UTC+8) 顯示在 LINE 上
-        local_time = datetime.now(timezone(timedelta(hours=8))).strftime('%H:%M')
+        # 使用當前在地時間顯示在 LINE 上
+        local_time = datetime.now().strftime('%H:%M')
 
         msg = f"【目前血糖】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
         send_line_message(msg)
