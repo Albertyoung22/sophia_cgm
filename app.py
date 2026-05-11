@@ -1,10 +1,12 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory, make_response
+from flask import Flask, request, jsonify, render_template, send_from_directory, make_response, send_file
 import hashlib
 import os
 from datetime import datetime, timezone, timedelta
 import requests
 import database
 import json
+import edge_tts
+import asyncio
 
 app = Flask(__name__)
 database.init_db()
@@ -244,6 +246,34 @@ def process_entries(items):
         print("[Process] No new entries found to broadcast.")
     sys.stdout.flush()
 
+@app.route('/api/v1/tts')
+def get_tts():
+    text = request.args.get('text', '血糖正常')
+    voice = "zh-TW-HsiaoChenNeural"
+    output_path = os.path.join("static", "voice.mp3")
+    
+    async def amain():
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(output_path)
+    
+    try:
+        # 在同步 Flask 中運行非同步任務
+        asyncio.run(amain())
+        return send_file(output_path, mimetype="audio/mpeg")
+    except Exception as e:
+        print(f"[TTS Error] {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/v2/chart_data')
+def get_chart_data():
+    db = database.get_db()
+    cursor = db.entries.find(sort=[("dateString", -1)]).limit(300)
+    entries = []
+    for doc in cursor:
+        doc['_id'] = str(doc['_id'])
+        entries.append(doc)
+    return jsonify(list(reversed(entries)))
+
 @app.route('/')
 def home():
     db = database.get_db()
@@ -251,7 +281,6 @@ def home():
     entries = []
     for doc in cursor:
         doc['_id'] = str(doc['_id'])
-        # 確保 sgv 有值，否則預設為 0
         doc['bg_value'] = doc.get('sgv') or 0
         doc['date_str'] = doc.get('dateString', '')
         entries.append(doc)

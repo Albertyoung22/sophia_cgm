@@ -231,22 +231,22 @@
             <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
             <div class="time local-time-display" data-time="{{ current_entry.date_str }}">{{ current_entry.date_str }}</div>
         </div>
-        <script>setTimeout(()=>window.location.reload(), 30000);</script>
+    <!-- AJAX Auto-refresh active -->
         
     {% elif view_mode == 'color' and current_entry %}
-        <div class="mode-color {{ bg_color_class }}">
+        <div id="full-color-container" class="mode-color {{ bg_color_class }}">
             <div class="bg-val"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span></div>
-            <div class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</div>
+            <div id="full-color-dir" class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</div>
             <div class="time local-time-display" data-time="{{ current_entry.date_str }}" style="font-size: 5vw; opacity: 0.8; margin-top: 20px;">{{ current_entry.date_str }}</div>
         </div>
-        <script>setTimeout(()=>window.location.reload(), 30000);</script>
+    <!-- AJAX Auto-refresh active -->
         
     {% elif view_mode == 'simple' and current_entry %}
         <div class="mode-simple">
             <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
             <div class="local-time-display" data-time="{{ current_entry.date_str }}" style="color: #94a3b8; font-size: 2rem; margin-top: 1rem;">{{ current_entry.date_str }}</div>
         </div>
-        <script>setTimeout(()=>window.location.reload(), 30000);</script>
+    <!-- AJAX Auto-refresh active -->
 
     {% else %}
     <!-- MAIN DASHBOARD -->
@@ -607,27 +607,29 @@
         updateLiveClock();
 
         applyUnit();
-        document.querySelectorAll('.local-time-display').forEach(el => {
-            const isoStr = el.getAttribute('data-time');
-            if (!isoStr) return;
-            const d = new Date(isoStr);
-            if (!isNaN(d.getTime())) {
-                const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
-                const diffMs = new Date() - d;
-                const diffMins = Math.floor(diffMs / 60000);
-                let agoStr = '';
-                if (diffMins < 1) agoStr = '剛剛';
-                else if (diffMins < 60) agoStr = diffMins + ' 分鐘前';
-                else agoStr = Math.floor(diffMins / 60) + ' 小時前';
-                
-                el.innerText = `${timeStr} (${agoStr})`;
-                // 同步更新 xDrip Header 的時間
-                const xDripTime = document.getElementById('xdrip-time-ago');
-                if (xDripTime && el.classList.contains('local-time-display') && el === document.querySelector('.local-time-display')) {
-                    xDripTime.innerText = agoStr;
+        function updateAllTimeLabels() {
+            document.querySelectorAll('.local-time-display').forEach(el => {
+                const isoStr = el.getAttribute('data-time');
+                if (!isoStr) return;
+                const d = new Date(isoStr);
+                if (!isNaN(d.getTime())) {
+                    const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+                    const diffMs = new Date() - d;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    let agoStr = '';
+                    if (diffMins < 1) agoStr = '剛剛';
+                    else if (diffMins < 60) agoStr = diffMins + ' 分鐘前';
+                    else agoStr = Math.floor(diffMins / 60) + ' 小時前';
+                    
+                    el.innerText = `${timeStr} (${agoStr})`;
+                    const xDripTime = document.getElementById('xdrip-time-ago');
+                    if (xDripTime && el === document.querySelector('.local-time-display')) {
+                        xDripTime.innerText = agoStr;
+                    }
                 }
-            }
-        });
+            });
+        }
+        updateAllTimeLabels();
 
         let deferredPrompt;
         const installBanner = document.getElementById('pwa-install-banner');
@@ -708,6 +710,85 @@
             } catch (e) { console.error("Prediction error:", e); }
         }
         setTimeout(addPrediction, 800);
+
+        // 背景更新數據 (AJAX)
+        let lastAnnouncedTime = "";
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/v2/chart_data');
+                const data = await response.json();
+                if (!data || data.length === 0) return;
+                
+                // 1. 更新圖表數據點
+                chartDataPoints.length = 0;
+                data.forEach(item => {
+                    chartDataPoints.push({ x: new Date(item.dateString), y: item.sgv || 0 });
+                });
+                
+                if (window.cgmChartInstance) {
+                    window.cgmChartInstance.data.datasets[0].data = chartDataPoints;
+                    // 更新點的顏色
+                    window.cgmChartInstance.data.datasets[0].pointBackgroundColor = chartDataPoints.map(p => {
+                        if (p.y >= 180) return '#FF9F0A';
+                        if (p.y <= 70) return '#FF453A';
+                        return '#00BFFF';
+                    });
+                    window.cgmChartInstance.update('none');
+                    addPrediction();
+                }
+                
+                // 2. 更新畫面上的數值
+                const latest = data[data.length - 1];
+                if (latest) {
+                    const sgv = latest.sgv || 0;
+                    document.querySelectorAll('.bg-val-num').forEach(el => el.setAttribute('data-mgdl', sgv));
+                    document.querySelectorAll('.bg-dir').forEach(el => el.setAttribute('data-dir', latest.direction));
+                    
+                    // 特殊處理：顏色模式的背景與文字變色
+                    const colorContainer = document.getElementById('full-color-container');
+                    if (colorContainer) {
+                        colorContainer.classList.remove('bg-normal', 'bg-high', 'bg-low');
+                        if (sgv > 180) colorContainer.classList.add('bg-high');
+                        else if (sgv < 70) colorContainer.classList.add('bg-low');
+                        else colorContainer.classList.add('bg-normal');
+                    }
+                    
+                    // 更新所有時間顯示標籤
+                    document.querySelectorAll('.local-time-display').forEach(el => {
+                        // 如果是最近一筆的時間標籤，則更新它
+                        if (el.classList.contains('local-time-display')) {
+                            // 更新為最新時間串，觸發下方 applyTimeFormats
+                            el.setAttribute('data-time', latest.dateString);
+                        }
+                    });
+                    
+                    applyUnit(); // 重新計算單位與標題
+                    updateStats(); // 重新計算 TIR
+                    updateAllTimeLabels(); // 重新整理「幾分鐘前」文字
+                    
+                    // 3. 語音播報與警報 (如果時間有更新)
+                    if (latest.dateString !== lastAnnouncedTime) {
+                        lastAnnouncedTime = latest.dateString;
+                        announceBG(latest.sgv, latest.direction);
+                        if (latest.sgv < 70) playAlarm();
+                    }
+                }
+            } catch (e) { console.error("Refresh error:", e); }
+        }
+
+        function announceBG(val, dir) {
+            const text = `血糖${val}`;
+            const audio = new Audio(`/api/v1/tts?text=${encodeURIComponent(text)}&t=${Date.now()}`);
+            audio.play().catch(e => console.log("Edge TTS play blocked", e));
+        }
+
+        function playAlarm() {
+            const audio = new Audio('/static/alert.mp3');
+            audio.play().catch(e => console.log("Audio play blocked by browser"));
+        }
+
+        // 每 60 秒背景更新一次
+        setInterval(refreshData, 60000);
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
