@@ -112,6 +112,24 @@ def verify_auth():
         "message": {"canRead": True, "canWrite": True, "isAdmin": True, "message": "OK", "rolefound": "FOUND", "permissions": "ROLE"}
     })
 
+@app.route('/api/v1/treatments', methods=['GET', 'POST'])
+def treatments_api():
+    db = database.get_db()
+    if request.method == 'GET':
+        # 回傳最近的治療紀錄 (或回傳空陣列以消去 404 錯誤)
+        cursor = db.treatments.find(sort=[("created_at", -1)]).limit(50)
+        treatments = []
+        for t in cursor:
+            t['_id'] = str(t['_id'])
+            treatments.append(t)
+        return jsonify(treatments)
+    
+    # 處理 POST (接收新的治療紀錄)
+    data = request.get_json(silent=True) or {}
+    if data:
+        db.treatments.insert_one(data)
+    return jsonify({"status": "success"}), 200
+
 @app.route('/api/v1/entries', methods=['GET', 'POST'])
 @app.route('/api/v1/entries.json', methods=['GET', 'POST'])
 def entries_api():
