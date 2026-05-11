@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from datetime import datetime
 
 # 從環境變數讀取 MongoDB 連接字串，預設為本地端 (測試用)
-MONGO_URI = os.environ.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or "mongodb://localhost:27017/nightscout"
+MONGO_URI = os.environ.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or "mongodb+srv://youngtunchou:nightscout12345@cluster0.pippenm.mongodb.net/?appName=Cluster0"
 DB_NAME = "nightscout"
 
 client = None

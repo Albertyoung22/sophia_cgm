@@ -18,19 +18,20 @@
     <script src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0/dist/date-fns.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.2/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     
     <style>
         :root {
             --bg-color: #000000;
-            --card-bg: rgba(28, 28, 30, 0.8);
+            --card-bg: rgba(20, 20, 22, 0.7);
             --primary: #0A84FF;
             --accent: #32D74B;
             --text-main: #FFFFFF;
             --text-muted: #8E8E93;
             --danger: #FF453A;
             --warning: #FF9F0A;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
             --safe-bottom: env(safe-area-inset-bottom);
         }
         body { 
@@ -95,7 +96,13 @@
         .val-low { color: var(--danger); }
         .val-normal { color: var(--accent); }
         
-        .chart-container { padding: 1.25rem; margin-bottom: 1.5rem; height: 320px; }
+        .chart-container { 
+            padding: 10px; 
+            margin-bottom: 1.5rem; 
+            height: 340px; 
+            background: #000000;
+            border-radius: 20px;
+        }
         
         /* Tab Bar */
         .tab-bar {
@@ -318,8 +325,9 @@
             const cLow = tTheme === 'colorblind' ? '#FF453A' : '#FF453A';
             const cNormal = tTheme === 'colorblind' ? '#0A84FF' : '#32D74B';
             
-            // X 軸固定為過去 24 小時直到現在
+            // X 軸預設顯示過去 12 小時，但允許平移
             const now = new Date();
+            const past12h = new Date(now.getTime() - 12 * 60 * 60 * 1000);
             const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
             window.cgmChartInstance = new Chart(ctx, {
@@ -328,15 +336,19 @@
                     datasets: [{
                         label: '血糖值',
                         data: chartDataPoints,
-                        borderColor: '#0A84FF',
-                        backgroundColor: 'rgba(10, 132, 255, 0.1)',
-                        borderWidth: 3,
-                        pointBackgroundColor: chartDataPoints.map(p => p.y > 180 ? cHigh : (p.y < 70 ? cLow : cNormal)),
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 2,
+                        pointBackgroundColor: chartDataPoints.map(p => {
+                            if (p.y >= 180) return '#FF9F0A'; // High
+                            if (p.y <= 80) return '#FF453A';  // Low
+                            return '#FFFFFF';                // Normal
+                        }),
                         pointBorderColor: '#000000',
-                        pointBorderWidth: 2,
-                        pointRadius: 4,
-                        fill: true,
-                        tension: 0.4
+                        pointBorderWidth: 1,
+                        pointRadius: 3.5,
+                        fill: false,
+                        tension: 0.3,
+                        spanGaps: true
                     }]
                 },
                 options: {
@@ -344,7 +356,65 @@
                     maintainAspectRatio: false,
                     plugins: { 
                         legend: { display: false }, 
-                        tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(28, 28, 30, 0.9)', cornerRadius: 12 } 
+                        tooltip: { 
+                            mode: 'index', 
+                            intersect: false, 
+                            backgroundColor: 'rgba(28, 28, 30, 0.9)', 
+                            cornerRadius: 12,
+                            titleColor: '#8E8E93',
+                            bodyFont: { weight: 'bold' }
+                        },
+                        annotation: {
+                            annotations: {
+                                lineHigh: {
+                                     type: 'line',
+                                     yMin: 260, yMax: 260,
+                                     borderColor: 'rgba(255, 69, 58, 0.3)',
+                                     borderWidth: 1, borderDash: [5, 5]
+                                 },
+                                lineLow: {
+                                     type: 'line',
+                                     yMin: 55, yMax: 55,
+                                     borderColor: 'rgba(255, 69, 58, 0.3)',
+                                     borderWidth: 1, borderDash: [5, 5]
+                                 },
+                                boxRange: {
+                                     type: 'box',
+                                     yMin: 80, yMax: 180,
+                                     backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                     borderWidth: 0
+                                 },
+                                lineTargetTop: {
+                                     type: 'line',
+                                     yMin: 180, yMax: 180,
+                                     borderColor: 'rgba(255, 255, 255, 0.1)',
+                                     borderWidth: 1, borderDash: [3, 3]
+                                 },
+                                lineTargetBottom: {
+                                     type: 'line',
+                                     yMin: 80, yMax: 80,
+                                     borderColor: 'rgba(255, 255, 255, 0.1)',
+                                     borderWidth: 1, borderDash: [3, 3]
+                                 }
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x'
+                            },
+                            limits: {
+                                x: { 
+                                    min: past24h.getTime(), 
+                                    max: now.getTime() + 30 * 60 * 1000 // 允許往後平移 30 分鐘預留空間
+                                }
+                            }
+                        }
                     },
                     scales: {
                         x: {
@@ -355,16 +425,23 @@
                                     hour: timeFormat === '12' ? 'h a' : 'HH:mm'
                                 }
                             },
-                            min: past24h,
+                            min: past12h,
                             max: now,
                             grid: { display: false },
                             ticks: { color: '#8E8E93', maxRotation: 0, autoSkip: true }
                         },
                         y: { 
                             suggestedMin: 40, 
-                            suggestedMax: 260, 
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
-                            ticks: { color: '#8E8E93' } 
+                            suggestedMax: 300, 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false }, 
+                            ticks: { 
+                                color: '#8E8E93',
+                                callback: function(value) {
+                                    if ([55, 80, 180, 260].includes(value)) return value;
+                                    if (value % 50 === 0) return value;
+                                    return null;
+                                }
+                            } 
                         }
                     }
                 }

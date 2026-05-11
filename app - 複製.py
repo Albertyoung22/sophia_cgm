@@ -35,7 +35,7 @@ def reply_line_message(reply_token, text):
 @app.before_request
 def log_all():
     if not request.path.startswith('/static'):
-        print(f"[Connection] {request.method} {request.path}")
+        print(f"📡 [連線請求] {request.method} {request.path}")
 
 # ---------------------------------------------------------
 # LINE Webhook (處理使用者輸入)
@@ -43,13 +43,13 @@ def log_all():
 @app.route("/callback", methods=['POST'])
 def line_callback():
     body = request.get_json()
-    print(f"[Webhook] Received: {json.dumps(body)}")
+    print(f"📩 收到 Webhook 事件: {json.dumps(body)}")
     try:
         for event in body.get('events', []):
             if event['type'] == 'message' and event['message']['type'] == 'text':
                 user_msg = event['message']['text'].strip()
                 reply_token = event['replyToken']
-                print(f"[Message] User: {user_msg}")
+                print(f"💬 使用者訊息: {user_msg}")
                 
                 if user_msg == "血糖" or user_msg.lower() == "bg":
                     db = database.get_db()
@@ -142,17 +142,16 @@ def process_entries(items):
     if latest_entry:
         msg = f"【自動推播】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {latest_entry['date']}"
         send_line_message(msg)
-        print(f"[Success] Processed and broadcasted: {latest_entry['val']}")
+        print(f"✅ 處理完成並推播: {latest_entry['val']}")
 
 @app.route('/')
 def home():
     db = database.get_db()
-    cursor = db.entries.find(sort=[("dateString", -1)]).limit(300)
+    cursor = db.entries.find(sort=[("dateString", -1)]).limit(50)
     entries = []
     for doc in cursor:
         doc['_id'] = str(doc['_id'])
-        # 確保 sgv 有值，否則預設為 0
-        doc['bg_value'] = doc.get('sgv') or 0
+        doc['bg_value'] = doc.get('sgv', 0)
         doc['date_str'] = doc.get('dateString', '')
         entries.append(doc)
     return render_template('index.html', entries=entries, chart_data=list(reversed(entries)))
