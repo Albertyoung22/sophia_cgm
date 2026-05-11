@@ -77,12 +77,11 @@ def line_callback():
                             local_time = entry['dateString']
                         msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {local_time}"
                         reply_line_message(reply_token, msg)
-                        print(f"✅ 找到數據: {entry['sgv']} at {local_time}")
+                        print(f"✅ 已回覆數據: {entry['sgv']} at {local_time}")
                     else:
                         msg = "資料庫目前沒有任何血糖紀錄。"
-                        print("⚠️ 資料庫是空的")
-                    reply_line_message(reply_token, msg)
-                    print("📤 已送出回覆")
+                        reply_line_message(reply_token, msg)
+                        print("⚠️ 資料庫是空的，已回覆提示")
     except Exception as e:
         print(f"❌ Webhook 錯誤: {e}")
     return 'OK'
