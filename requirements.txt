@@ -1,7 +1,9 @@
 flask
 requests
 waitress
-edge-tts
+edge-tts==7.2.8
 gunicorn
 pymongo
 dnspython
+matplotlib
+pillow
