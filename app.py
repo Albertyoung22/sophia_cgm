@@ -1,12 +1,16 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory, make_response, send_file
-import hashlib
 import os
-from datetime import datetime, timezone, timedelta
 import requests
+from flask import Flask, request, jsonify, render_template, send_from_directory, make_response, send_file
 import database
+from datetime import datetime, timedelta, timezone
+import sys
 import json
 import edge_tts
 import asyncio
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import matplotlib
+matplotlib.use('Agg') # 讓 matplotlib 在背景運行而不開啟視窗
 
 app = Flask(__name__)
 database.init_db()
@@ -17,31 +21,95 @@ LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAd
 
 # 全域變數，紀錄上次推播狀態
 last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "type": "normal"}
-def send_line_message(text):
+def send_line_message(text, image_url=None):
     if not LINE_ACCESS_TOKEN: 
         print("[LINE] Skip: No Token")
         return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
-    data = {"messages": [{"type": "text", "text": text}]}
+    
+    messages = [{"type": "text", "text": text}]
+    if image_url:
+        messages.append({
+            "type": "image",
+            "originalContentUrl": image_url,
+            "previewImageUrl": image_url
+        })
+        
+    data = {"messages": messages}
     import sys
     try: 
-        response = requests.post(url, headers=headers, json=data, timeout=5)
+        response = requests.post(url, headers=headers, json=data, timeout=10)
         print(f"[LINE] Broadcast status: {response.status_code}")
         sys.stdout.flush()
     except Exception as e:
         print(f"[LINE] Error: {e}")
         sys.stdout.flush()
 
+def generate_line_chart():
+    try:
+        db = database.get_db()
+        cursor = db.entries.find(sort=[("dateString", -1)]).limit(144) # 約 12 小時
+        data = list(cursor)
+        if not data: return None
+        
+        times = [datetime.fromisoformat(d['dateString'].replace('Z', '+00:00')) for d in data]
+        vals = [d.get('sgv', 0) for d in data]
+        
+        plt.figure(figsize=(8, 4), facecolor='black')
+        ax = plt.gca()
+        ax.set_facecolor('black')
+        
+        # 繪製點與線
+        colors = []
+        for v in vals:
+            if v >= 180: colors.append('#FF9F0A')
+            elif v <= 70: colors.append('#FF453A')
+            else: colors.append('#00BFFF')
+            
+        plt.plot(times, vals, color='#555555', linewidth=1, alpha=0.5, zorder=1)
+        plt.scatter(times, vals, c=colors, s=20, zorder=2)
+        
+        # 設定座標軸樣式
+        plt.ylim(40, 400)
+        ax.tick_params(colors='gray', labelsize=8)
+        for spine in ax.spines.values(): spine.set_color('#333333')
+        
+        # 時間格式化 (台灣時間)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=timezone(timedelta(hours=8))))
+        
+        plt.grid(color='#222222', linestyle='--', linewidth=0.5)
+        plt.tight_layout()
+        
+        output_path = os.path.join("static", "line_chart.png")
+        plt.savefig(output_path, facecolor='black')
+        plt.close()
+        return True
+    except Exception as e:
+        print(f"[Chart Error] {e}")
+        return False
+
 # 回覆特定訊息
-def reply_line_message(reply_token, text):
+def reply_line_message(reply_token, text, image_url=None):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    
+    messages = [{"type": "text", "text": text}]
+    if image_url:
+        messages.append({
+            "type": "image",
+            "originalContentUrl": image_url,
+            "previewImageUrl": image_url
+        })
+        
     data = {
         "replyToken": reply_token,
-        "messages": [{"type": "text", "text": text}]
+        "messages": messages
     }
-    requests.post(url, headers=headers, json=data, timeout=5)
+    try:
+        requests.post(url, headers=headers, json=data, timeout=10)
+    except Exception as e:
+        print(f"[LINE Reply Error] {e}")
 
 @app.before_request
 def log_all():
@@ -81,9 +149,16 @@ def line_callback():
                             local_time = dt_utc.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
                         except:
                             local_time = entry['dateString']
+                        
+                        # 手動查詢也附上趨勢圖 (Reply 訊息是免費的)
+                        chart_url = None
+                        if generate_line_chart():
+                            now_ts = int(datetime.now().timestamp())
+                            chart_url = f"https://sophia-cgm.onrender.com/static/line_chart.png?t={now_ts}"
+                            
                         msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {local_time}"
-                        reply_line_message(reply_token, msg)
-                        print(f"✅ 已回覆數據: {entry['sgv']} at {local_time}")
+                        reply_line_message(reply_token, msg, chart_url)
+                        print(f"✅ 已回覆數據與圖表: {entry['sgv']} at {local_time}")
                     else:
                         msg = "資料庫目前沒有任何血糖紀錄。"
                         reply_line_message(reply_token, msg)
@@ -234,9 +309,16 @@ def process_entries(items):
             # 強制使用台灣時間 (UTC+8) 顯示在 LINE 上
             local_now = datetime.now(timezone(timedelta(hours=8)))
             local_time = local_now.strftime('%H:%M')
+            
+            # 如果是緊急狀態，生成圖表並發送圖片
+            chart_url = None
+            if is_urgent:
+                if generate_line_chart():
+                    # 請確保此網址與您的 Render 網址一致
+                    chart_url = f"https://sophia-cgm.onrender.com/static/line_chart.png?t={int(now.timestamp())}"
 
             msg = f"【{'警告' if is_urgent else '目前血糖'}】\n數值: {val}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
-            send_line_message(msg)
+            send_line_message(msg, chart_url)
             
             last_push_info = {"time": now, "val": val, "type": "urgent" if is_urgent else "normal"}
             print(f"[Success] {reason} broadcast: {val} at {local_time}")
