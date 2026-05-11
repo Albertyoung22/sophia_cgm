@@ -183,7 +183,8 @@
         button.secondary { background: #3A3A3C; margin-top: 10px; color: #FFFFFF; }
     </style>
 </head>
-<body>
+<body onload="updateLiveClock()">
+    <div id="top-live-clock" style="position: fixed; top: 0; right: 0; padding: 4px 10px; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--primary); font-size: 0.8rem; font-weight: 700; z-index: 9999; border-bottom-left-radius: 12px; font-family: monospace;">--:--:--</div>
     {% set current_entry = entries[0] if entries else None %}
     {% set val_class = 'val-normal' %}
     {% set val = current_entry.bg_value|int if current_entry else 0 %}
@@ -221,7 +222,10 @@
                     <h1 id="dynamic-title">昕蓉的CGM</h1>
                     <span id="header-live-bg" style="font-size: 1.8rem; font-weight: 800; background: rgba(255,255,255,0.1); padding: 0.3rem 0.8rem; border-radius: 12px; display: none; line-height: 1;"></span>
                 </div>
-                <p>即時血糖監控面板</p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+                    <p style="margin:0;">即時血糖監控面板</p>
+                    <div id="current-time-display" style="background: rgba(10, 132, 255, 0.15); color: var(--primary); padding: 4px 12px; border-radius: 10px; font-weight: 700; font-family: 'Inter', sans-serif; font-size: 0.9rem;">--:--:--</div>
+                </div>
             </div>
         </header>
 
@@ -516,6 +520,22 @@
                 }
             }
         }
+
+        function updateLiveClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit', 
+                hour12: timeFormat === '12' 
+            });
+            const clockEl = document.getElementById('current-time-display');
+            if (clockEl) clockEl.innerText = timeStr;
+            const topClockEl = document.getElementById('top-live-clock');
+            if (topClockEl) topClockEl.innerText = timeStr;
+        }
+        setInterval(updateLiveClock, 1000);
+        updateLiveClock();
 
         applyUnit();
         document.querySelectorAll('.local-time-display').forEach(el => {
