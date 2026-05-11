@@ -184,8 +184,9 @@ def process_entries(items):
     sys.stdout.flush()
 
     if latest_entry:
-        # 使用當前在地時間顯示在 LINE 上
-        local_time = datetime.now().strftime('%H:%M')
+        # 強制使用台灣時間 (UTC+8) 顯示在 LINE 上
+        local_now = datetime.now(timezone(timedelta(hours=8)))
+        local_time = local_now.strftime('%H:%M')
 
         msg = f"【目前血糖】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
         send_line_message(msg)
