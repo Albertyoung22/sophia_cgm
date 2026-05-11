@@ -1,7 +1,9 @@
 const CACHE_NAME = 'cgm-pwa-v2';
 const ASSETS = [
-  '/static/manifest.json',
-  '/static/icon.svg'
+  '/',
+  '/manifest.json',
+  '/static/icon.svg',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap'
 ];
 
 // 安裝

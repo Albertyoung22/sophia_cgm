@@ -97,12 +97,47 @@
         .val-normal { color: var(--accent); }
         
         .chart-container { 
-            padding: 10px; 
-            margin-bottom: 1.5rem; 
-            height: 340px; 
+            padding: 5px; 
+            margin-bottom: 0.5rem; 
+            height: 380px; 
             background: #000000;
-            border-radius: 20px;
+            border-radius: 0;
+            position: relative;
         }
+        .time-selector {
+            display: flex;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            padding: 4px;
+            gap: 4px;
+        }
+        .time-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 700;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .time-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+        .xdrip-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.5);
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            z-index: 10;
+        }
+        .xdrip-info { font-size: 0.9rem; color: #ccc; line-height: 1.2; }
+        .xdrip-main { font-size: 3.5rem; font-weight: 400; color: #fff; display: flex; align-items: center; gap: 10px; }
+        .xdrip-main .arrow { font-size: 2.5rem; }
         
         /* Tab Bar */
         .tab-bar {
@@ -235,8 +270,38 @@
             </button>
         </div>
         
-        <div class="chart-container glass">
+        <div class="time-selector">
+            <button class="time-btn" onclick="setChartRange(3)">3H</button>
+            <button class="time-btn" onclick="setChartRange(6)">6H</button>
+            <button class="time-btn active" onclick="setChartRange(12)">12H</button>
+            <button class="time-btn" onclick="setChartRange(24)">24H</button>
+        </div>
+        
+        <div class="chart-container">
+            <div class="xdrip-header">
+                <div class="xdrip-info">
+                    <div id="xdrip-time-ago">--</div>
+                    <div id="xdrip-delta" style="color: #8E8E93;">-- mg/dl</div>
+                </div>
+                <div class="xdrip-main">
+                    <span id="xdrip-val">--</span>
+                    <span id="xdrip-arrow" class="arrow"></span>
+                </div>
+            </div>
             <canvas id="cgmChart"></canvas>
+        </div>
+
+        <div class="dashboard-grid" style="margin-bottom: 1.5rem;">
+            <div class="card glass" style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 15px 20px;">
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">時間在範圍內 (TIR)</div>
+                    <div id="stats-tir" style="font-size: 1.6rem; font-weight: 800; color: var(--accent);">--%</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">平均血糖 (Avg)</div>
+                    <div id="stats-avg" style="font-size: 1.6rem; font-weight: 800; color: #fff;">--</div>
+                </div>
+            </div>
         </div>
 
         <div class="dashboard-grid">
@@ -340,117 +405,101 @@
                     datasets: [{
                         label: '血糖值',
                         data: chartDataPoints,
-                        borderColor: 'rgba(255, 255, 255, 0.2)',
-                        borderWidth: 2,
+                        borderColor: '#555555', // xDrip 灰色連接線
+                        borderWidth: 1.5,
                         pointBackgroundColor: chartDataPoints.map(p => {
-                            if (p.y >= 180) return '#FF9F0A'; // High
-                            if (p.y <= 80) return '#FF453A';  // Low
-                            return '#FFFFFF';                // Normal
+                            if (p.y >= 180) return '#FF9F0A'; // High: Orange
+                            if (p.y <= 70) return '#FF453A';  // Low: Red
+                            return '#00BFFF';                // Normal: DeepSkyBlue (xDrip style)
                         }),
-                        pointBorderColor: '#000000',
+                        pointBorderColor: 'rgba(0,0,0,0.5)',
                         pointBorderWidth: 1,
-                        pointRadius: 3.5,
+                        pointRadius: 4,
                         fill: false,
-                        tension: 0.3,
+                        tension: 0.2,
                         spanGaps: true
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    layout: { padding: { top: 70 } }, // 留空間給 xDrip Header
                     plugins: { 
                         legend: { display: false }, 
-                        tooltip: { 
-                            mode: 'index', 
-                            intersect: false, 
-                            backgroundColor: 'rgba(28, 28, 30, 0.9)', 
-                            cornerRadius: 12,
-                            titleColor: '#8E8E93',
-                            bodyFont: { weight: 'bold' }
-                        },
+                        tooltip: { enabled: true },
                         annotation: {
                             annotations: {
-                                lineHigh: {
-                                     type: 'line',
-                                     yMin: 260, yMax: 260,
-                                     borderColor: 'rgba(255, 69, 58, 0.3)',
-                                     borderWidth: 1, borderDash: [5, 5]
-                                 },
-                                lineLow: {
-                                     type: 'line',
-                                     yMin: 55, yMax: 55,
-                                     borderColor: 'rgba(255, 69, 58, 0.3)',
-                                     borderWidth: 1, borderDash: [5, 5]
-                                 },
-                                boxRange: {
-                                     type: 'box',
-                                     yMin: 80, yMax: 180,
-                                     backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                                     borderWidth: 0
-                                 },
-                                lineTargetTop: {
-                                     type: 'line',
-                                     yMin: 180, yMax: 180,
-                                     borderColor: 'rgba(255, 255, 255, 0.1)',
-                                     borderWidth: 1, borderDash: [3, 3]
-                                 },
-                                lineTargetBottom: {
-                                     type: 'line',
-                                     yMin: 80, yMax: 80,
-                                     borderColor: 'rgba(255, 255, 255, 0.1)',
-                                     borderWidth: 1, borderDash: [3, 3]
-                                 }
+                                // 低血糖紅色警戒區
+                                dangerZone: {
+                                    type: 'box',
+                                    yMin: 0,
+                                    yMax: 70,
+                                    backgroundColor: 'rgba(255, 69, 58, 0.15)',
+                                    borderWidth: 0
+                                },
+                                // 高血糖警示線
+                                highLine: {
+                                    type: 'line',
+                                    yMin: 180,
+                                    yMax: 180,
+                                    borderColor: 'rgba(255, 159, 10, 0.6)',
+                                    borderWidth: 1.5
+                                },
+                                // 低血糖警示線
+                                lowLine: {
+                                    type: 'line',
+                                    yMin: 70,
+                                    yMax: 70,
+                                    borderColor: 'rgba(255, 69, 58, 0.6)',
+                                    borderWidth: 1,
+                                    borderDash: [5, 5]
+                                }
                             }
                         },
                         zoom: {
-                            pan: {
-                                enabled: true,
-                                mode: 'x'
-                            },
+                            pan: { enabled: true, mode: 'x' },
                             zoom: {
                                 wheel: { enabled: true },
                                 pinch: { enabled: true },
                                 mode: 'x'
-                            },
-                            limits: {
-                                x: { 
-                                    min: past24h.getTime(), 
-                                    max: now.getTime() + 30 * 60 * 1000 // 允許往後平移 30 分鐘預留空間
-                                }
                             }
                         }
                     },
                     scales: {
                         x: {
                             type: 'time',
-                            time: {
-                                unit: 'hour',
-                                displayFormats: {
-                                    hour: timeFormat === '12' ? 'h a' : 'HH:mm'
-                                }
-                            },
                             min: past12h,
                             max: now,
-                            grid: { display: false },
-                            ticks: { color: '#8E8E93', maxRotation: 0, autoSkip: true }
+                            grid: { color: 'rgba(255,255,255,0.1)', display: true },
+                            ticks: { color: '#8E8E93', font: { size: 10 } },
+                            time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }
                         },
                         y: { 
-                            suggestedMin: 40, 
-                            suggestedMax: 300, 
-                            grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false }, 
-                            ticks: { 
-                                color: '#8E8E93',
-                                callback: function(value) {
-                                    if ([55, 80, 180, 260].includes(value)) return value;
-                                    if (value % 50 === 0) return value;
-                                    return null;
-                                }
-                            } 
+                            min: 40, max: 250,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#8E8E93', stepSize: 50 } 
                         }
                     }
                 }
             });
+    }
+
+    // 實作時間範圍切換
+    window.setChartRange = function(hours) {
+        const now = new Date();
+        const past = new Date(now.getTime() - hours * 60 * 60 * 1000);
+        
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.innerText === hours + 'H') btn.classList.add('active');
+        });
+        
+        if (window.cgmChartInstance) {
+            window.cgmChartInstance.options.scales.x.min = past;
+            window.cgmChartInstance.options.scales.x.max = now;
+            window.cgmChartInstance.update('none');
         }
+    };
 
         let currentUnit = localStorage.getItem('bg_unit') || 'mg/dL';
         let customTitle = localStorage.getItem('custom_title') || '昕蓉的CGM';
@@ -517,6 +566,26 @@
                         else if (rawVal < 70) headerLiveBg.style.color = 'var(--danger)';
                         else headerLiveBg.style.color = 'var(--accent)';
                     }
+                    
+                    // xDrip Header Update
+                    const xVal = document.getElementById('xdrip-val');
+                    const xArrow = document.getElementById('xdrip-arrow');
+                    const xDelta = document.getElementById('xdrip-delta');
+                    if (xVal) xVal.innerText = bgVal;
+                    if (xArrow) xArrow.innerText = arrow;
+                    if (xVal) {
+                        if (rawVal > 180) xVal.style.color = '#FF9F0A';
+                        else if (rawVal < 70) xVal.style.color = '#FF453A';
+                        else xVal.style.color = '#00BFFF';
+                    }
+                    
+                    // 計算與前一筆的差值 (Delta)
+                    if (chartDataPoints.length >= 2) {
+                        const latest = chartDataPoints[chartDataPoints.length - 1].y;
+                        const prev = chartDataPoints[chartDataPoints.length - 2].y;
+                        const delta = latest - prev;
+                        if (xDelta) xDelta.innerText = `${delta >= 0 ? '+' : ''}${delta} mg/dl`;
+                    }
                 }
             }
         }
@@ -552,6 +621,11 @@
                 else agoStr = Math.floor(diffMins / 60) + ' 小時前';
                 
                 el.innerText = `${timeStr} (${agoStr})`;
+                // 同步更新 xDrip Header 的時間
+                const xDripTime = document.getElementById('xdrip-time-ago');
+                if (xDripTime && el.classList.contains('local-time-display') && el === document.querySelector('.local-time-display')) {
+                    xDripTime.innerText = agoStr;
+                }
             }
         });
 
@@ -574,6 +648,67 @@
                 }
             });
         }
+        // 統計數據計算 (TIR, Avg)
+        function updateStats() {
+            if (!chartDataPoints || chartDataPoints.length === 0) return;
+            try {
+                const values = chartDataPoints.map(p => p.y);
+                const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+                const inRange = values.filter(v => v >= 70 && v <= 180).length;
+                const tir = Math.round((inRange / values.length) * 100);
+                
+                const tirEl = document.getElementById('stats-tir');
+                const avgEl = document.getElementById('stats-avg');
+                if (tirEl) {
+                    tirEl.innerText = tir + '%';
+                    if (tir >= 70) tirEl.style.color = 'var(--accent)';
+                    else if (tir >= 50) tirEl.style.color = 'var(--warning)';
+                    else tirEl.style.color = 'var(--danger)';
+                }
+                if (avgEl) avgEl.innerText = avg;
+            } catch (e) { console.error("Stats error:", e); }
+        }
+        updateStats();
+
+        // 預測曲線邏輯 (預測未來 30 分鐘)
+        function addPrediction() {
+            if (!chartDataPoints || chartDataPoints.length < 2) return;
+            try {
+                const latest = chartDataPoints[chartDataPoints.length - 1];
+                const prev = chartDataPoints[chartDataPoints.length - 2];
+                const timeDiff = latest.x - prev.x;
+                if (timeDiff <= 0) return; // 避免除以零或時間倒流
+                
+                const velocity = (latest.y - prev.y) / timeDiff; // mg/dl per ms
+                
+                const predictionPoints = [];
+                for (let i = 5; i <= 30; i += 5) {
+                    const pTime = new Date(latest.x.getTime() + i * 60000);
+                    const pVal = Math.round(latest.y + velocity * (i * 60000));
+                    if (pVal > 40 && pVal < 400) {
+                        predictionPoints.push({ x: pTime, y: pVal });
+                    }
+                }
+                
+                if (window.cgmChartInstance && predictionPoints.length > 0) {
+                    // 移除舊的預測線 (如果存在)
+                    window.cgmChartInstance.data.datasets = window.cgmChartInstance.data.datasets.filter(ds => ds.label !== '預測');
+                    
+                    window.cgmChartInstance.data.datasets.push({
+                        label: '預測',
+                        data: [latest, ...predictionPoints],
+                        borderColor: 'rgba(255, 255, 255, 0.3)',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    });
+                    window.cgmChartInstance.update('none');
+                }
+            } catch (e) { console.error("Prediction error:", e); }
+        }
+        setTimeout(addPrediction, 800);
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW Reg OK')).catch(err => console.log('SW Reg Fail', err));

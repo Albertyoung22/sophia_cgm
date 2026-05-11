@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory, make_response
 import hashlib
 import os
 from datetime import datetime, timezone, timedelta
@@ -13,7 +13,8 @@ database.init_db()
 API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=").strip()
 
-# 主動發送廣播訊息
+# 全域變數，紀錄上次推播狀態
+last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "type": "normal"}
 def send_line_message(text):
     if not LINE_ACCESS_TOKEN: 
         print("[LINE] Skip: No Token")
@@ -42,14 +43,17 @@ def reply_line_message(reply_token, text):
 
 @app.before_request
 def log_all():
-    if not request.path.startswith('/static'):
-        import sys
-        body = ""
-        if request.method == 'POST':
-            try: body = f" | Body: {request.get_data(as_text=True)[:100]}..."
-            except: pass
-        print(f"[Connection] {request.method} {request.path}{body}")
-        sys.stdout.flush()
+    # 忽略常見的靜態檔案請求，減少日誌噪音
+    if request.path.startswith('/static') or request.path in ['/favicon.ico', '/manifest.json', '/sw.js']:
+        return
+    
+    import sys
+    body = ""
+    if request.method == 'POST':
+        try: body = f" | Body: {request.get_data(as_text=True)[:100]}..."
+        except: pass
+    print(f"[Connection] {request.method} {request.path}{body}")
+    sys.stdout.flush()
 
 # ---------------------------------------------------------
 # LINE Webhook (處理使用者輸入)
@@ -202,17 +206,43 @@ def process_entries(items):
     sys.stdout.flush()
 
     if latest_entry:
-        # 強制使用台灣時間 (UTC+8) 顯示在 LINE 上
-        local_now = datetime.now(timezone(timedelta(hours=8)))
-        local_time = local_now.strftime('%H:%M')
+        global last_push_info
+        now = datetime.now(timezone.utc)
+        val = latest_entry['val']
+        
+        # 判斷是否需要推播
+        is_urgent = val > 180 or val < 80
+        minutes_since_last = (now - last_push_info["time"]).total_seconds() / 60
+        
+        should_push = False
+        reason = ""
+        
+        if is_urgent:
+            # 緊急狀況：每 30 分鐘推播一次
+            if minutes_since_last >= 30 or last_push_info["type"] == "normal":
+                should_push = True
+                reason = "Urgent Alert"
+        else:
+            # 正常狀況：每 120 分鐘推播一次
+            if minutes_since_last >= 120:
+                should_push = True
+                reason = "Regular Update"
 
-        msg = f"【目前血糖】\n數值: {latest_entry['val']}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
-        send_line_message(msg)
-        print(f"[Success] Broadcast triggered: {latest_entry['val']} at {local_time}")
-        sys.stdout.flush()
+        if should_push:
+            # 強制使用台灣時間 (UTC+8) 顯示在 LINE 上
+            local_now = datetime.now(timezone(timedelta(hours=8)))
+            local_time = local_now.strftime('%H:%M')
+
+            msg = f"【{'警告' if is_urgent else '目前血糖'}】\n數值: {val}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
+            send_line_message(msg)
+            
+            last_push_info = {"time": now, "val": val, "type": "urgent" if is_urgent else "normal"}
+            print(f"[Success] {reason} broadcast: {val} at {local_time}")
+        else:
+            print(f"[Skip] Push throttled. Last push was {int(minutes_since_last)} mins ago. (Val: {val})")
     else:
         print("[Process] No new entries found to broadcast.")
-        sys.stdout.flush()
+    sys.stdout.flush()
 
 @app.route('/')
 def home():
@@ -229,11 +259,26 @@ def home():
 
 @app.route('/manifest.json')
 def serve_manifest():
-    return app.send_static_file('manifest.json')
+    response = make_response(send_from_directory('static', 'manifest.json'))
+    response.headers['Content-Type'] = 'application/manifest+json'
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
 
 @app.route('/sw.js')
 def serve_sw():
-    return app.send_static_file('sw.js')
+    response = make_response(send_from_directory('static', 'sw.js'))
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+@app.route('/favicon.ico')
+@app.route('/static/icon.svg')
+def serve_icon():
+    response = make_response(send_from_directory('static', 'icon.svg'))
+    response.headers['Content-Type'] = 'image/svg+xml'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    return response
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
