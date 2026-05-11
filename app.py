@@ -44,7 +44,11 @@ def reply_line_message(reply_token, text):
 def log_all():
     if not request.path.startswith('/static'):
         import sys
-        print(f"[Connection] {request.method} {request.path}")
+        body = ""
+        if request.method == 'POST':
+            try: body = f" | Body: {request.get_data(as_text=True)[:100]}..."
+            except: pass
+        print(f"[Connection] {request.method} {request.path}{body}")
         sys.stdout.flush()
 
 # ---------------------------------------------------------
@@ -65,8 +69,15 @@ def line_callback():
                     db = database.get_db()
                     entry = db.entries.find_one(sort=[("dateString", -1)])
                     if entry:
-                        msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {entry['dateString']}"
-                        print(f"✅ 找到數據: {entry['sgv']}")
+                        # 轉換為在地時間 (UTC+8)
+                        try:
+                            dt_utc = datetime.fromisoformat(entry['dateString'].replace('Z', '+00:00'))
+                            local_time = dt_utc.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
+                        except:
+                            local_time = entry['dateString']
+                        msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {local_time}"
+                        reply_line_message(reply_token, msg)
+                        print(f"✅ 找到數據: {entry['sgv']} at {local_time}")
                     else:
                         msg = "資料庫目前沒有任何血糖紀錄。"
                         print("⚠️ 資料庫是空的")
