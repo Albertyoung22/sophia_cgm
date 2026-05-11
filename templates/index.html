@@ -522,7 +522,17 @@
             const isoStr = el.getAttribute('data-time');
             if (!isoStr) return;
             const d = new Date(isoStr);
-            if (!isNaN(d.getTime())) el.innerText = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+            if (!isNaN(d.getTime())) {
+                const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
+                const diffMs = new Date() - d;
+                const diffMins = Math.floor(diffMs / 60000);
+                let agoStr = '';
+                if (diffMins < 1) agoStr = '剛剛';
+                else if (diffMins < 60) agoStr = diffMins + ' 分鐘前';
+                else agoStr = Math.floor(diffMins / 60) + ' 小時前';
+                
+                el.innerText = `${timeStr} (${agoStr})`;
+            }
         });
 
         let deferredPrompt;
