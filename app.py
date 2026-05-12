@@ -10,6 +10,8 @@ import asyncio
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib
+import numpy as np
+from scipy.interpolate import make_interp_spline
 matplotlib.use('Agg') # 讓 matplotlib 在背景運行而不開啟視窗
 
 app = Flask(__name__)
@@ -21,6 +23,21 @@ LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAd
 
 # 全域變數，紀錄上次推播狀態
 last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "type": "normal"}
+def get_direction_emoji(direction):
+    mapping = {
+        "DoubleUp": "⇈",
+        "SingleUp": "↑",
+        "FortyFiveUp": "↗",
+        "Flat": "→",
+        "FortyFiveDown": "↘",
+        "SingleDown": "↓",
+        "DoubleDown": "⇊",
+        "RateOutOfRange": "!!",
+        "NOT COMPUTABLE": "?",
+        "NONE": "-"
+    }
+    return mapping.get(direction, direction)
+
 def send_line_message(text, image_url=None):
     if not LINE_ACCESS_TOKEN: 
         print("[LINE] Skip: No Token")
@@ -49,44 +66,125 @@ def send_line_message(text, image_url=None):
 def generate_line_chart():
     try:
         db = database.get_db()
-        cursor = db.entries.find(sort=[("dateString", -1)]).limit(144) # 約 12 小時
+        # 取得最近 144 筆資料 (約 12 小時)
+        cursor = db.entries.find(sort=[("dateString", -1)]).limit(144)
         data = list(cursor)
         if not data: return None
+        
+        # 轉為時間順序
+        data.reverse()
         
         times = [datetime.fromisoformat(d['dateString'].replace('Z', '+00:00')) for d in data]
         vals = [d.get('sgv', 0) for d in data]
         
-        plt.figure(figsize=(8, 4), facecolor='black')
-        ax = plt.gca()
-        ax.set_facecolor('black')
+        if not times: return None
+
+        # --- 樣式設定 (現代感、深色主題) ---
+        BG_COLOR = '#121212'      # 深背景
+        GRID_COLOR = '#2A2A2A'    # 格線
+        TEXT_COLOR = '#E0E0E0'    # 文字
+        NORMAL_COLOR = '#00E676'  # 綠色 (正常)
+        HIGH_COLOR = '#FF9100'    # 橘色 (偏高)
+        LOW_COLOR = '#FF5252'     # 紅色 (偏低)
+        LINE_COLOR = '#FFFFFF'    # 主線條白色
         
-        # 繪製點與線
+        plt.figure(figsize=(10, 5), facecolor=BG_COLOR, dpi=120)
+        ax = plt.gca()
+        ax.set_facecolor(BG_COLOR)
+        
+        # --- 範圍帶狀背景 ---
+        plt.axhspan(70, 180, color=NORMAL_COLOR, alpha=0.03) # 正常範圍淡淡綠色
+        plt.axhline(y=180, color=HIGH_COLOR, linestyle='--', linewidth=1, alpha=0.3)
+        plt.axhline(y=70, color=LOW_COLOR, linestyle='--', linewidth=1, alpha=0.3)
+        
+        # --- 繪製曲線 ---
+        # 1. 繪製平滑曲線 (如果有足夠資料)
+        if len(times) > 10:
+            try:
+                # 將時間轉為秒數進行插值
+                x = np.array([t.timestamp() for t in times])
+                y = np.array(vals)
+                
+                # 移除重複的 timestamp 避免插值失敗
+                x, unique_idx = np.unique(x, return_index=True)
+                y = y[unique_idx]
+                
+                if len(x) > 3:
+                    x_new = np.linspace(x.min(), x.max(), 300)
+                    spl = make_interp_spline(x, y, k=3)
+                    y_smooth = spl(x_new)
+                    
+                    # 繪製平滑線
+                    plt.plot([datetime.fromtimestamp(ts, tz=timezone.utc) for ts in x_new], 
+                             y_smooth, color=LINE_COLOR, linewidth=2, alpha=0.7, zorder=3)
+                    
+                    # 繪製漸層填滿 (曲線下方)
+                    plt.fill_between([datetime.fromtimestamp(ts, tz=timezone.utc) for ts in x_new], 
+                                    y_smooth, 40, color=LINE_COLOR, alpha=0.05, zorder=2)
+            except Exception as e:
+                print(f"[Smooth Plot Error] {e}")
+                plt.plot(times, vals, color=LINE_COLOR, linewidth=2, alpha=0.6, zorder=3)
+        else:
+            plt.plot(times, vals, color=LINE_COLOR, linewidth=2, alpha=0.6, zorder=3)
+        
+        # 2. 繪製資料點 (顏色依數值而定)
         colors = []
         for v in vals:
-            if v >= 180: colors.append('#FF9F0A')
-            elif v <= 70: colors.append('#FF453A')
-            else: colors.append('#00BFFF')
-            
-        plt.plot(times, vals, color='#555555', linewidth=1, alpha=0.5, zorder=1)
-        plt.scatter(times, vals, c=colors, s=20, zorder=2)
+            if v >= 180: colors.append(HIGH_COLOR)
+            elif v <= 70: colors.append(LOW_COLOR)
+            else: colors.append(NORMAL_COLOR)
         
-        # 設定座標軸樣式
-        plt.ylim(40, 400)
-        ax.tick_params(colors='gray', labelsize=8)
-        for spine in ax.spines.values(): spine.set_color('#333333')
+        plt.scatter(times, vals, c=colors, s=25, edgecolors=BG_COLOR, linewidth=0.5, zorder=4)
         
-        # 時間格式化 (台灣時間)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=timezone(timedelta(hours=8))))
+        # 3. 強調最新數值
+        latest_time = times[-1]
+        latest_val = vals[-1]
+        latest_color = colors[-1]
         
-        plt.grid(color='#222222', linestyle='--', linewidth=0.5)
+        plt.scatter(latest_time, latest_val, color=latest_color, s=120, edgecolors='white', linewidth=2, zorder=5)
+        
+        # 在圖上標註最新數值
+        plt.annotate(f"{latest_val}", 
+                     (latest_time, latest_val),
+                     textcoords="offset points", 
+                     xytext=(0, 15), 
+                     ha='center', 
+                     fontsize=14, 
+                     fontweight='bold', 
+                     color='white',
+                     bbox=dict(boxstyle='round,pad=0.3', fc=latest_color, alpha=0.9, ec='white', lw=1))
+
+        # --- 格式化座標軸 ---
+        plt.ylim(40, 300 if max(vals) < 280 else max(vals) + 20)
+        ax.tick_params(colors=TEXT_COLOR, labelsize=10)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(GRID_COLOR)
+        
+        # 時間格式 (台灣時間)
+        tz_tw = timezone(timedelta(hours=8))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=tz_tw))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+        
+        plt.grid(color=GRID_COLOR, linestyle='-', linewidth=0.5, alpha=0.8)
+        
+        # 圖表標題與資訊
+        last_update = latest_time.astimezone(tz_tw).strftime('%m/%d %H:%M')
+        plt.title(f"血糖趨勢圖 ({last_update})", color=TEXT_COLOR, fontsize=12, pad=15, fontweight='bold')
+        
+        # 隱藏右方與上方的邊框
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
         plt.tight_layout()
         
         output_path = os.path.join("static", "line_chart.png")
-        plt.savefig(output_path, facecolor='black')
+        plt.savefig(output_path, facecolor=BG_COLOR, bbox_inches='tight')
         plt.close()
         return True
     except Exception as e:
         print(f"[Chart Error] {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # 回覆特定訊息
@@ -156,7 +254,8 @@ def line_callback():
                             now_ts = int(datetime.now().timestamp())
                             chart_url = f"https://sophia-cgm.onrender.com/static/line_chart.png?t={now_ts}"
                             
-                        msg = f"【即時查詢】\n數值: {entry['sgv']}\n趨勢: {entry['direction']}\n時間: {local_time}"
+                        dir_emoji = get_direction_emoji(entry['direction'])
+                        msg = f"【即時查詢】\n🩸 數值: {entry['sgv']}\n📈 趨勢: {dir_emoji} ({entry['direction']})\n⏰ 時間: {local_time}"
                         reply_line_message(reply_token, msg, chart_url)
                         print(f"✅ 已回覆數據與圖表: {entry['sgv']} at {local_time}")
                     else:
@@ -317,7 +416,8 @@ def process_entries(items):
                     # 請確保此網址與您的 Render 網址一致
                     chart_url = f"https://sophia-cgm.onrender.com/static/line_chart.png?t={int(now.timestamp())}"
 
-            msg = f"【{'警告' if is_urgent else '目前血糖'}】\n數值: {val}\n趨勢: {latest_entry['dir']}\n時間: {local_time}"
+            dir_emoji = get_direction_emoji(latest_entry['dir'])
+            msg = f"【{'🚨 警告' if is_urgent else '📊 目前血糖'}】\n🩸 數值: {val}\n📈 趨勢: {dir_emoji} ({latest_entry['dir']})\n⏰ 時間: {local_time}"
             send_line_message(msg, chart_url)
             
             last_push_info = {"time": now, "val": val, "type": "urgent" if is_urgent else "normal"}
