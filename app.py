@@ -178,7 +178,7 @@ def generate_line_chart():
         plt.tight_layout()
         
         output_path = os.path.join("static", "line_chart.png")
-        plt.savefig(output_path, facecolor=BG_COLOR, bbox_inches='tight')
+        plt.savefig(output_path, facecolor='black')
         plt.close()
         return True
     except Exception as e:
@@ -186,6 +186,127 @@ def generate_line_chart():
         import traceback
         traceback.print_exc()
         return False
+
+def get_daily_stats(hours=24):
+    try:
+        db = database.get_db()
+        now = datetime.now(timezone.utc)
+        start_time = now - timedelta(hours=hours)
+        
+        # 查詢過去 N 小時的資料
+        cursor = db.entries.find({
+            "dateString": {"$gte": start_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')}
+        }).sort("dateString", 1)
+        
+        data = list(cursor)
+        if not data: return None
+        
+        vals = [d.get('sgv', 0) for d in data]
+        if not vals: return None
+        
+        avg = sum(vals) / len(vals)
+        in_range = len([v for v in vals if 70 <= v <= 180])
+        tir = (in_range / len(vals)) * 100
+        
+        high = len([v for v in vals if v > 180])
+        low = len([v for v in vals if v < 70])
+        
+        # GMI 計算公式: 3.31 + 0.02392 * [平均血糖 mg/dL]
+        gmi = 3.31 + (0.02392 * avg)
+        
+        return {
+            "avg": round(avg),
+            "tir": round(tir),
+            "high": round((high / len(vals)) * 100),
+            "low": round((low / len(vals)) * 100),
+            "gmi": round(gmi, 1),
+            "count": len(vals)
+        }
+    except Exception as e:
+        print(f"[Stats Error] {e}")
+        return None
+
+def generate_summary_chart(hours=24):
+    try:
+        db = database.get_db()
+        now = datetime.now(timezone.utc)
+        start_time = now - timedelta(hours=hours)
+        
+        cursor = db.entries.find({
+            "dateString": {"$gte": start_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')}
+        }).sort("dateString", 1)
+        
+        data = list(cursor)
+        if not data: return None
+        
+        times = [datetime.fromisoformat(d['dateString'].replace('Z', '+00:00')) for d in data]
+        vals = [d.get('sgv', 0) for d in data]
+        
+        plt.figure(figsize=(10, 5), facecolor='black')
+        ax = plt.gca()
+        ax.set_facecolor('black')
+        
+        # 繪製背景範圍
+        plt.axhspan(70, 180, color='#32D74B', alpha=0.1, label='Target Range')
+        
+        # 繪製點與線
+        plt.plot(times, vals, color='#555555', linewidth=1.5, alpha=0.6)
+        
+        colors = []
+        for v in vals:
+            if v >= 180: colors.append('#FF9F0A')
+            elif v <= 70: colors.append('#FF453A')
+            else: colors.append('#00BFFF')
+            
+        plt.scatter(times, vals, c=colors, s=15, zorder=3)
+        
+        plt.ylim(40, 350)
+        ax.tick_params(colors='gray', labelsize=9)
+        for spine in ax.spines.values(): spine.set_color('#333333')
+        
+        # 時間格式化 (台灣時間)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=timezone(timedelta(hours=8))))
+        plt.grid(color='#222222', linestyle='--', linewidth=0.5)
+        
+        plt.title(f"過去 {hours} 小時趨勢圖", color='white', pad=20, fontsize=12)
+        plt.tight_layout()
+        
+        output_path = os.path.join("static", "summary_chart.png")
+        plt.savefig(output_path, facecolor='black')
+        plt.close()
+        return True
+    except Exception as e:
+        print(f"[Summary Chart Error] {e}")
+        return False
+
+@app.route('/api/v1/daily_report', methods=['GET'])
+def trigger_daily_report():
+    # 安全性檢查 (可選)
+    token = request.args.get('token')
+    if token != API_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    stats = get_daily_stats(24)
+    if stats:
+        chart_url = None
+        if generate_summary_chart(24):
+            now_ts = int(datetime.now().timestamp())
+            chart_url = f"https://sophia-cgm.onrender.com/static/summary_chart.png?t={now_ts}"
+        
+        msg = (
+            f"📊 【每日血糖自動結算】\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
+            f"🔹 TIR (範圍內): {stats['tir']}%\n"
+            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
+            f"🔹 偏高比例: {stats['high']}%\n"
+            f"🔹 偏低比例: {stats['low']}%\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"過去 24 小時共記錄 {stats['count']} 次數據。"
+        )
+        send_line_message(msg, chart_url)
+        return jsonify({"status": "success", "stats": stats})
+    return jsonify({"status": "no_data"}), 200
 
 # 回覆特定訊息
 def reply_line_message(reply_token, text, image_url=None):
@@ -262,6 +383,31 @@ def line_callback():
                         msg = "資料庫目前沒有任何血糖紀錄。"
                         reply_line_message(reply_token, msg)
                         print("⚠️ 資料庫是空的，已回覆提示")
+
+                elif user_msg in ["報表", "報告", "report"]:
+                    stats = get_daily_stats(24)
+                    if stats:
+                        chart_url = None
+                        if generate_summary_chart(24):
+                            now_ts = int(datetime.now().timestamp())
+                            # 請確保此網址與您的實際網址一致
+                            chart_url = f"https://sophia-cgm.onrender.com/static/summary_chart.png?t={now_ts}"
+                        
+                        msg = (
+                            f"📊 【過去 24 小時報表】\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
+                            f"🔹 TIR (範圍內): {stats['tir']}%\n"
+                            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
+                            f"🔹 偏高比例: {stats['high']}%\n"
+                            f"🔹 偏低比例: {stats['low']}%\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"共分析 {stats['count']} 筆數據"
+                        )
+                        reply_line_message(reply_token, msg, chart_url)
+                        print(f"✅ 已回覆 24H 報表: Avg {stats['avg']}")
+                    else:
+                        reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
     except Exception as e:
         print(f"❌ Webhook 錯誤: {e}")
     return 'OK'
