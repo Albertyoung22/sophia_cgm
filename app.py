@@ -461,11 +461,13 @@ def treatments_api():
 def entries_api():
     db = database.get_db()
     if request.method == 'GET':
-        entry = db.entries.find_one(sort=[("dateString", -1)])
-        if entry:
+        count = request.args.get('count', 1, type=int)
+        cursor = db.entries.find(sort=[("dateString", -1)]).limit(count)
+        entries = []
+        for entry in cursor:
             entry['_id'] = str(entry['_id'])
-            return jsonify([entry])
-        return jsonify([])
+            entries.append(entry)
+        return jsonify(entries)
     
     data = request.get_json(silent=True) or {}
     items = [data] if isinstance(data, dict) else data
@@ -612,7 +614,8 @@ def home():
         doc['bg_value'] = doc.get('sgv') or 0
         doc['date_str'] = doc.get('dateString', '')
         entries.append(doc)
-    return render_template('index.html', entries=entries, chart_data=list(reversed(entries)))
+    view_mode = request.args.get('view', 'main')
+    return render_template('index.html', entries=entries, chart_data=list(reversed(entries)), view_mode=view_mode)
 
 @app.route('/manifest.json')
 def serve_manifest():
