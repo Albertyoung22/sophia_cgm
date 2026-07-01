@@ -534,23 +534,29 @@ def process_entries(items):
         now = datetime.now(timezone.utc)
         val = latest_entry['val']
         
-        # 判斷是否需要推播
-        is_urgent = val > 180 or val < 80
+        # 判斷血糖狀態與是否需要推播 (狀態改變時才推播，或持續異常時每 60 分鐘提醒一次)
+        if val < 80:
+            current_state = "low"
+        elif val > 180:
+            current_state = "high"
+        else:
+            current_state = "normal"
+            
+        last_state = last_push_info.get("type", "normal")
         minutes_since_last = (now - last_push_info["time"]).total_seconds() / 60
+        is_urgent = current_state in ["low", "high"]
         
         should_push = False
         reason = ""
         
-        if is_urgent:
-            # 緊急狀況：每 30 分鐘推播一次
-            if minutes_since_last >= 30 or last_push_info["type"] == "normal":
-                should_push = True
-                reason = "Urgent Alert"
-        else:
-            # 正常狀況：每 120 分鐘推播一次
-            if minutes_since_last >= 120:
-                should_push = True
-                reason = "Regular Update"
+        # 1. 狀態發生改變時（例如 normal -> high, high -> normal 等），必定推播
+        if current_state != last_state:
+            should_push = True
+            reason = f"State transition from {last_state} to {current_state}"
+        # 2. 狀態未改變，但持續處於異常狀態 (low 或 high)，且距離上次推播超過 60 分鐘，再次提醒
+        elif is_urgent and minutes_since_last >= 60:
+            should_push = True
+            reason = f"Persistent {current_state} state alert"
 
         if should_push:
             # 強制使用台灣時間 (UTC+8) 顯示在 LINE 上
@@ -568,10 +574,10 @@ def process_entries(items):
             msg = f"【{'🚨 警告' if is_urgent else '📊 目前血糖'}】\n🩸 數值: {val}\n📈 趨勢: {dir_emoji} ({latest_entry['dir']})\n⏰ 時間: {local_time}"
             send_line_message(msg, chart_url)
             
-            last_push_info = {"time": now, "val": val, "type": "urgent" if is_urgent else "normal"}
+            last_push_info = {"time": now, "val": val, "type": current_state}
             print(f"[Success] {reason} broadcast: {val} at {local_time}")
         else:
-            print(f"[Skip] Push throttled. Last push was {int(minutes_since_last)} mins ago. (Val: {val})")
+            print(f"[Skip] Push throttled. Last push was {int(minutes_since_last)} mins ago. Current state: {current_state}, Last state: {last_state} (Val: {val})")
     else:
         print("[Process] No new entries found to broadcast.")
     sys.stdout.flush()
