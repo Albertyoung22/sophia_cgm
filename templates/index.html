@@ -2,800 +2,440 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>昕蓉的CGM</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="昕蓉CGM">
-    <link rel="apple-touch-icon" href="/static/icon.svg">
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SophiaCarelink - 美敦力 Continuous Glucose Monitor</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0/dist/date-fns.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.2/dist/chartjs-plugin-annotation.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-    
     <style>
         :root {
-            --bg-color: #000000;
-            --card-bg: rgba(20, 20, 22, 0.7);
-            --primary: #0A84FF;
-            --accent: #32D74B;
-            --text-main: #FFFFFF;
-            --text-muted: #8E8E93;
-            --danger: #FF453A;
-            --warning: #FF9F0A;
-            --glass-bg: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --safe-bottom: env(safe-area-inset-bottom);
+            --bg-color: #0b0f19;
+            --card-bg: #161c2e;
+            --card-border: #232b45;
+            --accent-green: #00e676;
+            --accent-orange: #ff9100;
+            --accent-red: #ff5252;
+            --accent-blue: #00b0ff;
+            --text-main: #f1f5f9;
+            --text-sub: #94a3b8;
         }
-        body { 
-            margin: 0; 
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif; 
-            background-color: var(--bg-color); 
-            color: var(--text-main); 
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 20px;
             min-height: 100vh;
-            -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
-        }
-        .container { 
-            max-width: 600px; 
-            margin: 0 auto; 
-            padding: 1.5rem 1rem calc(6rem + var(--safe-bottom)); 
-        }
-        
-        .glass {
-            background: var(--card-bg);
-            backdrop-filter: blur(30px);
-            -webkit-backdrop-filter: blur(30px);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-        }
-
-        /* View Modes */
-        .mode-clock, .mode-simple, .mode-color { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; padding-bottom: calc(4rem + var(--safe-bottom)); box-sizing: border-box; }
-        .mode-clock .bg-val { font-size: 32vw; font-weight: 700; letter-spacing: -2px; line-height: 1; }
-        .mode-clock .bg-dir { font-size: 15vw; margin-left: 10px; }
-        .mode-clock .time { font-size: 6vw; color: var(--text-muted); margin-top: 10px; }
-        
-        .mode-color.bg-normal { background-color: #1C1C1E; }
-        .mode-color.bg-high { background-color: #FF9F0A; }
-        .mode-color.bg-low { background-color: #FF453A; }
-        .mode-color .bg-val { font-size: 40vw; font-weight: 800; line-height: 1; }
-        .mode-color .bg-dir { font-size: 25vw; line-height: 1; }
-        
-        .mode-simple .bg-val { font-size: 25vw; font-weight: 700; }
-        
-        /* Header */
-        header { 
-            display: flex; 
-            flex-direction: column;
-            gap: 0.5rem;
-            margin-bottom: 2rem; 
-        }
-        .title-group h1 { 
-            margin: 0; 
-            font-size: 2.4rem; 
-            font-weight: 800;
-            letter-spacing: -1px;
-            color: #FFFFFF;
-        }
-        .title-group p { margin: 0; color: var(--text-muted); font-size: 0.95rem; font-weight: 500; }
-
-        .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-        .card { padding: 1.25rem; transition: transform 0.2s cubic-bezier(0.1, 0, 0.1, 1); }
-        .card:active { transform: scale(0.96); }
-        
-        .val-high { color: var(--warning); }
-        .val-very-high { color: var(--danger); }
-        .val-low { color: var(--danger); }
-        .val-normal { color: var(--accent); }
-        
-        .chart-container { 
-            padding: 5px; 
-            margin-bottom: 0.5rem; 
-            height: 380px; 
-            background: #000000;
-            border-radius: 0;
-            position: relative;
-        }
-        .time-selector {
             display: flex;
-            background: rgba(255,255,255,0.05);
-            border-radius: 12px;
-            margin-bottom: 1rem;
-            padding: 4px;
-            gap: 4px;
+            flex-direction: column;
+            align-items: center;
         }
-        .time-btn {
-            flex: 1;
-            padding: 8px;
-            background: transparent;
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            font-weight: 700;
-            border-radius: 8px;
-            transition: all 0.2s;
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
-        .time-btn.active {
-            background: var(--primary);
-            color: white;
-        }
-        .xdrip-header {
+
+        /* Header */
+        header {
             display: flex;
             justify-content: space-between;
-            padding: 10px 15px;
-            background: rgba(0,0,0,0.5);
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            z-index: 10;
-        }
-        .xdrip-info { font-size: 0.9rem; color: #ccc; line-height: 1.2; }
-        .xdrip-main { font-size: 3.5rem; font-weight: 400; color: #fff; display: flex; align-items: center; gap: 10px; }
-        .xdrip-main .arrow { font-size: 2.5rem; }
-        
-        /* Tab Bar */
-        .tab-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: calc(3.8rem + var(--safe-bottom));
-            background: rgba(18, 18, 18, 0.85);
-            backdrop-filter: blur(40px);
-            -webkit-backdrop-filter: blur(40px);
-            border-top: 0.5px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            justify-content: space-around;
             align-items: center;
-            padding-bottom: var(--safe-bottom);
-            z-index: 1000;
+            padding: 16px 24px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         }
-        .tab-item {
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #00b0ff, #00e676);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: #000;
+        }
+
+        .brand-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .brand-sub {
+            font-size: 0.8rem;
+            color: var(--text-sub);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }
+
+        /* Dashboard Grid */
+        .grid-main {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-main {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Glucose Gauge Card */
+        .glucose-card {
             display: flex;
             flex-direction: column;
             align-items: center;
-            text-decoration: none;
-            color: var(--text-muted);
-            font-size: 0.65rem;
-            font-weight: 600;
-            gap: 5px;
-            flex: 1;
-            padding: 8px 0;
+            justify-content: center;
+            text-align: center;
+            min-height: 280px;
         }
-        .tab-item.active { color: var(--primary); }
-        .tab-item svg { width: 24px; height: 24px; fill: currentColor; }
 
-        /* Modal Styles */
-        dialog { 
-            background: #1C1C1E; 
-            color: var(--text-main); 
-            border: none;
-            border-radius: 28px; 
-            padding: 2rem; 
-            width: 85%; 
-            max-width: 380px;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            margin: 0;
+        .glucose-label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-sub);
+            margin-bottom: 12px;
         }
-        dialog::backdrop { background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); }
-        
-        input, select { 
-            width: 100%; 
-            padding: 16px; 
-            margin-bottom: 16px; 
-            background: #2C2C2E; 
-            border: none;
-            color: white; 
-            border-radius: 16px; 
-            font-size: 1.05rem;
-            font-weight: 500;
-            box-sizing: border-box;
-            outline: none;
+
+        .glucose-number {
+            font-size: 4.5rem;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 8px;
+            color: var(--accent-green);
         }
-        button { 
-            background: var(--primary); 
-            color: white; 
-            border: none; 
-            padding: 16px; 
-            border-radius: 18px; 
-            cursor: pointer; 
-            font-weight: 700; 
-            width: 100%; 
+
+        .glucose-unit {
             font-size: 1.1rem;
-            transition: all 0.2s;
+            color: var(--text-sub);
+            margin-left: 4px;
         }
-        button:active { transform: scale(0.98); opacity: 0.9; }
-        button.secondary { background: #3A3A3C; margin-top: 10px; color: #FFFFFF; }
+
+        .glucose-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: 600;
+            font-size: 1rem;
+            margin-top: 10px;
+        }
+
+        .time-badge {
+            font-size: 0.8rem;
+            color: var(--text-sub);
+            margin-top: 14px;
+        }
+
+        /* Chart Card */
+        .chart-card {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .chart-container {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            height: 220px;
+        }
+
+        /* Stats Row */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        @media (max-width: 600px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .stat-box {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-top: 4px;
+        }
+
+        .stat-lbl {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: rgba(22, 28, 46, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            font-size: 0.85rem;
+            color: var(--text-sub);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
     </style>
 </head>
-<body onload="updateLiveClock()">
-    <div id="top-live-clock" style="position: fixed; top: 0; right: 0; padding: 4px 10px; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--primary); font-size: 0.8rem; font-weight: 700; z-index: 9999; border-bottom-left-radius: 12px; font-family: monospace;">--:--:--</div>
-    {% set current_entry = entries[0] if entries else None %}
-    {% set val_class = 'val-normal' %}
-    {% set val = current_entry.bg_value|int if current_entry else 0 %}
-    {% if val > 200 %}{% set val_class = 'val-very-high' %}{% elif val > 140 %}{% set val_class = 'val-high' %}{% elif val > 0 and val < 70 %}{% set val_class = 'val-low' %}{% endif %}
-    {% set bg_color_class = 'bg-normal' %}{% if val > 140 %}{% set bg_color_class = 'bg-high' %}{% elif val > 0 and val < 70 %}{% set bg_color_class = 'bg-low' %}{% endif %}
-
-    {% if view_mode == 'clock' and current_entry %}
-        <div class="mode-clock">
-            <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
-            <div class="time local-time-display" data-time="{{ current_entry.date_str }}">{{ current_entry.date_str }}</div>
-        </div>
-    <!-- AJAX Auto-refresh active -->
-        
-    {% elif view_mode == 'color' and current_entry %}
-        <div id="full-color-container" class="mode-color {{ bg_color_class }}">
-            <div class="bg-val"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span></div>
-            <div id="full-color-dir" class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</div>
-            <div class="time local-time-display" data-time="{{ current_entry.date_str }}" style="font-size: 5vw; opacity: 0.8; margin-top: 20px;">{{ current_entry.date_str }}</div>
-        </div>
-    <!-- AJAX Auto-refresh active -->
-        
-    {% elif view_mode == 'simple' and current_entry %}
-        <div class="mode-simple">
-            <div class="bg-val {{ val_class }}"><span class="bg-val-num" data-mgdl="{{ current_entry.bg_value }}">{{ current_entry.bg_value }}</span> <span class="bg-dir" data-dir="{{ current_entry.direction }}">{{ current_entry.direction }}</span></div>
-            <div class="local-time-display" data-time="{{ current_entry.date_str }}" style="color: #94a3b8; font-size: 2rem; margin-top: 1rem;">{{ current_entry.date_str }}</div>
-        </div>
-    <!-- AJAX Auto-refresh active -->
-
-    {% else %}
-    <!-- MAIN DASHBOARD -->
+<body>
     <div class="container">
+        <!-- Header -->
         <header>
-            <div class="title-group">
-                <div style="display: flex; align-items: baseline; gap: 0.8rem;">
-                    <h1 id="dynamic-title">昕蓉的CGM</h1>
-                    <span id="header-live-bg" style="font-size: 1.8rem; font-weight: 800; background: rgba(255,255,255,0.1); padding: 0.3rem 0.8rem; border-radius: 12px; display: none; line-height: 1;"></span>
+            <div class="brand">
+                <div class="brand-icon">🩸</div>
+                <div>
+                    <div class="brand-title">SophiaCarelink</div>
+                    <div class="brand-sub">Medtronic CareLink Continuous Glucose Monitor</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
-                    <p style="margin:0;">即時血糖監控面板</p>
-                    <div id="current-time-display" style="background: rgba(10, 132, 255, 0.15); color: var(--primary); padding: 4px 12px; border-radius: 10px; font-weight: 700; font-family: 'Inter', sans-serif; font-size: 0.9rem;">--:--:--</div>
-                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn" onclick="triggerSync()">🔄 手動同步</button>
             </div>
         </header>
 
-        <div id="pwa-install-banner" style="display: none; margin-bottom: 1.5rem;">
-            <button type="button" id="manualInstallBtn" style="background: var(--accent); color: white; border: none; padding: 18px; border-radius: 20px; cursor: pointer; font-weight: 700; width: 100%; font-size: 1.1rem; box-shadow: 0 10px 20px rgba(50, 215, 75, 0.3);">
-                📲 點我安裝為手機 App (更方便)
-            </button>
-        </div>
-        
-        <div class="time-selector">
-            <button class="time-btn" onclick="setChartRange(3)">3H</button>
-            <button class="time-btn" onclick="setChartRange(6)">6H</button>
-            <button class="time-btn active" onclick="setChartRange(12)">12H</button>
-            <button class="time-btn" onclick="setChartRange(24)">24H</button>
-        </div>
-        
-        <div class="chart-container">
-            <div class="xdrip-header">
-                <div class="xdrip-info">
-                    <div id="xdrip-time-ago">--</div>
-                    <div id="xdrip-delta" style="color: #8E8E93;">-- mg/dl</div>
-                </div>
-                <div class="xdrip-main">
-                    <span id="xdrip-val">--</span>
-                    <span id="xdrip-arrow" class="arrow"></span>
-                </div>
-            </div>
-            <canvas id="cgmChart"></canvas>
-        </div>
-
-        <div class="dashboard-grid" style="margin-bottom: 1.5rem;">
-            <div class="card glass" style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 15px 20px;">
+        <!-- Main Dashboard -->
+        <div class="grid-main">
+            <!-- Glucose Gauge -->
+            <div class="card glucose-card">
+                <div class="glucose-label">最新連續血糖</div>
                 <div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">時間在範圍內 (TIR)</div>
-                    <div id="stats-tir" style="font-size: 1.6rem; font-weight: 800; color: var(--accent);">--%</div>
+                    <span class="glucose-number" id="glucose-val">--</span>
+                    <span class="glucose-unit">mg/dL</span>
                 </div>
-                <div style="text-align: right;">
-                    <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">平均血糖 (Avg)</div>
-                    <div id="stats-avg" style="font-size: 1.6rem; font-weight: 800; color: #fff;">--</div>
+                <div class="glucose-trend" id="glucose-trend">
+                    <span id="trend-icon">--</span>
+                    <span id="trend-text">載入中...</span>
+                </div>
+                <div class="time-badge" id="last-update">最後更新: 讀取中</div>
+            </div>
+
+            <!-- Realtime Chart -->
+            <div class="card chart-card">
+                <div class="card-header">
+                    <div class="card-title">📈 血糖趨勢圖 (最近 24 小時)</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="cgmChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <div class="dashboard-grid">
-            {% for entry in entries[:6] %}
-                <div class="card glass">
-                    <div class="local-time-display" data-time="{{ entry.date_str }}" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; font-weight: 600;">{{ entry.date_str }}</div>
-                    <div style="font-size: 2.2rem; font-weight: 800; line-height: 1;" class="{% if entry.bg_value|int > 180 %}val-high{% elif entry.bg_value|int < 70 %}val-low{% else %}val-normal{% endif %}">
-                        <span class="bg-val-num" data-mgdl="{{ entry.bg_value }}">{{ entry.bg_value }}</span> 
-                        <span class="bg-dir" data-dir="{{ entry.direction }}" style="font-size: 1.4rem">{{ entry.direction }}</span>
-                    </div>
-                </div>
-            {% endfor %}
-            {% if not entries %}
-                <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 3rem; background: var(--card-bg); border-radius: 24px; border: 1px solid var(--glass-border);">
-                    目前還沒有收到任何血糖資料。
-                </div>
-            {% endif %}
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-lbl">24h 平均血糖</div>
+                <div class="stat-val" id="stat-avg">-- mg/dL</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">TIR (目標範圍內 %)</div>
+                <div class="stat-val" style="color: var(--accent-green);" id="stat-tir">-- %</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">預估 HbA1c (GMI)</div>
+                <div class="stat-val" style="color: var(--accent-orange);" id="stat-gmi">-- %</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-lbl">最高 / 最低</div>
+                <div class="stat-val" style="font-size: 1.1rem; margin-top: 8px;" id="stat-range">-- / --</div>
+            </div>
+        </div>
+
+        <!-- Status Footer -->
+        <div class="status-bar">
+            <div><span class="dot"></span> CareLink 連線狀態: <strong id="status-text" style="color:#fff;">連線成功</strong></div>
+            <div>帳號: <strong>Sophiafa</strong> | 設備: Medtronic MiniMed</div>
         </div>
     </div>
-    <script>setTimeout(()=>window.location.reload(), 60000);</script>
-    {% endif %}
-
-    <nav class="tab-bar">
-        <a href="/" class="tab-item {% if view_mode == 'main' %}active{% endif %}">
-            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-            首頁
-        </a>
-        <a href="/?view=clock" class="tab-item {% if view_mode == 'clock' %}active{% endif %}">
-            <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-            時鐘
-        </a>
-        <a href="/?view=simple" class="tab-item {% if view_mode == 'simple' %}active{% endif %}">
-            <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
-            極簡
-        </a>
-        <a href="/?view=color" class="tab-item {% if view_mode == 'color' %}active{% endif %}">
-            <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9s1.5.67 1.5 1.5S7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
-            顏色
-        </a>
-        <a href="javascript:void(0)" onclick="openSettings()" class="tab-item">
-            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l-.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-            設定
-        </a>
-    </nav>
-
-    <!-- Settings Modal -->
-    <dialog id="settingsModal">
-        <h2 style="margin-top: 0; color: var(--primary);">設置</h2>
-        <form id="settingsForm" method="dialog">
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">計量單位</label>
-            <select id="settingUnit">
-                <option value="mg/dL">mg/dL</option>
-                <option value="mmol/L">mmol/L</option>
-            </select>
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">時間格式</label>
-            <select id="settingTimeFormat">
-                <option value="24">24小時制</option>
-                <option value="12">12小時制</option>
-            </select>
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">自定義標題</label>
-            <input type="text" id="settingTitle" placeholder="Nightscout">
-            
-            <label style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem; display: block;">主題</label>
-            <select id="settingTheme">
-                <option value="default">默認</option>
-                <option value="color">彩色</option>
-                <option value="colorblind">色盲患者可辨識的顏色</option>
-            </select>
-            
-            <button type="button" onclick="saveSettings()">儲存設置</button>
-            <button type="button" class="secondary" onclick="document.getElementById('settingsModal').close()">取消</button>
-        </form>
-    </dialog>
 
     <script>
-        const timeFormat = localStorage.getItem('time_format') || '24';
-        
-        const chartDataPoints = [
-            {% for item in chart_data %}
-                { x: new Date("{{ item.date_str }}"), y: {{ item.bg_value }} }{% if not loop.last %},{% endif %}
-            {% endfor %}
-        ];
+        let chartInstance = null;
 
-        const ctx = document.getElementById('cgmChart')?.getContext('2d');
-        if (ctx) {
-            const tTheme = localStorage.getItem('theme') || 'default';
-            const cHigh = tTheme === 'colorblind' ? '#FF9F0A' : '#FF9F0A';
-            const cLow = tTheme === 'colorblind' ? '#FF453A' : '#FF453A';
-            const cNormal = tTheme === 'colorblind' ? '#0A84FF' : '#32D74B';
-            
-            // X 軸預設顯示過去 12 小時，但允許平移
-            const now = new Date();
-            const past12h = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-            const past24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        async function fetchDashboard() {
+            try {
+                const res = await fetch('/api/v1/entries');
+                const data = await res.json();
+                
+                if (data.latest) {
+                    const val = data.latest.sgv;
+                    const valElem = document.getElementById('glucose-val');
+                    valElem.innerText = val;
 
-            window.cgmChartInstance = new Chart(ctx, {
+                    // 顏色變化
+                    if (val > 180) valElem.style.color = 'var(--accent-orange)';
+                    else if (val < 70) valElem.style.color = 'var(--accent-red)';
+                    else valElem.style.color = 'var(--accent-green)';
+
+                    document.getElementById('trend-icon').innerText = getDirectionIcon(data.latest.direction);
+                    document.getElementById('trend-text').innerText = data.latest.direction;
+                    
+                    const updateDate = new Date(data.latest.dateString);
+                    const formattedTime = updateDate.toLocaleString('zh-TW', { hour12: false });
+                    document.getElementById('last-update').innerText = `最後更新: ${formattedTime}`;
+                }
+
+                if (data.stats) {
+                    document.getElementById('stat-avg').innerText = `${data.stats.avg} mg/dL`;
+                    document.getElementById('stat-tir').innerText = `${data.stats.tir}%`;
+                    document.getElementById('stat-gmi').innerText = `${data.stats.gmi}%`;
+                    document.getElementById('stat-range').innerText = `${data.stats.max} / ${data.stats.min}`;
+                }
+
+                if (data.history && data.history.length > 0) {
+                    renderChart(data.history);
+                }
+            } catch (err) {
+                console.error("Dashboard error:", err);
+            }
+        }
+
+        function getDirectionIcon(dir) {
+            const map = {
+                "DoubleUp": "⇈", "SingleUp": "↑", "FortyFiveUp": "↗",
+                "Flat": "→", "FortyFiveDown": "↘", "SingleDown": "↓", "DoubleDown": "⇊"
+            };
+            return map[dir] || "→";
+        }
+
+        function renderChart(history) {
+            const ctx = document.getElementById('cgmChart').getContext('2d');
+            const labels = history.map(h => {
+                const d = new Date(h.dateString);
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            });
+            const values = history.map(h => h.sgv);
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
+                    labels: labels,
                     datasets: [{
-                        label: '血糖值',
-                        data: chartDataPoints,
-                        borderColor: '#555555', // xDrip 灰色連接線
-                        borderWidth: 1.5,
-                        pointBackgroundColor: chartDataPoints.map(p => {
-                            if (p.y >= 180) return '#FF9F0A'; // High: Orange
-                            if (p.y <= 70) return '#FF453A';  // Low: Red
-                            return '#00BFFF';                // Normal: DeepSkyBlue (xDrip style)
-                        }),
-                        pointBorderColor: 'rgba(0,0,0,0.5)',
-                        pointBorderWidth: 0.5,
-                        pointRadius: 1,
-                        pointHoverRadius: 4,
-                        fill: false,
-                        tension: 0.2,
-                        spanGaps: true
+                        label: '血糖 (mg/dL)',
+                        data: values,
+                        borderColor: '#00e676',
+                        backgroundColor: 'rgba(0, 230, 118, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2,
+                        borderWidth: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    layout: { padding: { top: 70 } }, // 留空間給 xDrip Header
-                    plugins: { 
-                        legend: { display: false }, 
-                        tooltip: { enabled: true },
-                        annotation: {
-                            annotations: {
-                                // 低血糖紅色警戒區
-                                dangerZone: {
-                                    type: 'box',
-                                    yMin: 0,
-                                    yMax: 70,
-                                    backgroundColor: 'rgba(255, 69, 58, 0.15)',
-                                    borderWidth: 0
-                                },
-                                // 高血糖警示線
-                                highLine: {
-                                    type: 'line',
-                                    yMin: 180,
-                                    yMax: 180,
-                                    borderColor: 'rgba(255, 159, 10, 0.6)',
-                                    borderWidth: 1.5
-                                },
-                                // 低血糖警示線
-                                lowLine: {
-                                    type: 'line',
-                                    yMin: 70,
-                                    yMax: 70,
-                                    borderColor: 'rgba(255, 69, 58, 0.6)',
-                                    borderWidth: 1,
-                                    borderDash: [5, 5]
-                                }
-                            }
-                        },
-                        zoom: {
-                            pan: { enabled: true, mode: 'x' },
-                            zoom: {
-                                wheel: { enabled: true },
-                                pinch: { enabled: true },
-                                mode: 'x'
-                            }
-                        }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
-                        x: {
-                            type: 'time',
-                            min: past12h,
-                            max: now,
-                            grid: { color: 'rgba(255,255,255,0.1)', display: true },
-                            ticks: { color: '#8E8E93', font: { size: 10 } },
-                            time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }
-                        },
-                        y: { 
-                            min: 40, max: 250,
-                            grid: { color: 'rgba(255,255,255,0.1)' },
-                            ticks: { color: '#8E8E93', stepSize: 50 } 
-                        }
+                        x: { grid: { color: '#232b45' }, ticks: { color: '#94a3b8' } },
+                        y: { min: 40, max: 300, grid: { color: '#232b45' }, ticks: { color: '#94a3b8' } }
                     }
                 }
             });
-    }
-
-    // 實作時間範圍切換
-    window.setChartRange = function(hours) {
-        const now = new Date();
-        const past = new Date(now.getTime() - hours * 60 * 60 * 1000);
-        
-        document.querySelectorAll('.time-btn').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.innerText === hours + 'H') btn.classList.add('active');
-        });
-        
-        if (window.cgmChartInstance) {
-            window.cgmChartInstance.options.scales.x.min = past;
-            window.cgmChartInstance.options.scales.x.max = now;
-            window.cgmChartInstance.update('none');
-        }
-    };
-
-        let currentUnit = localStorage.getItem('bg_unit') || 'mg/dL';
-        let customTitle = localStorage.getItem('custom_title') || '昕蓉的CGM';
-        let currentTheme = localStorage.getItem('theme') || 'default';
-        const h1 = document.getElementById('dynamic-title');
-        if (h1) h1.innerText = customTitle;
-        document.title = customTitle;
-
-        if (currentTheme === 'colorblind') {
-            document.documentElement.style.setProperty('--warning', '#FF9F0A'); 
-            document.documentElement.style.setProperty('--danger', '#FF453A');  
-            document.documentElement.style.setProperty('--accent', '#0A84FF');  
-            document.documentElement.style.setProperty('--primary', '#0A84FF');
         }
 
-        window.openSettings = function() {
-            document.getElementById('settingUnit').value = currentUnit;
-            document.getElementById('settingTimeFormat').value = localStorage.getItem('time_format') || '24';
-            document.getElementById('settingTitle').value = customTitle;
-            document.getElementById('settingTheme').value = currentTheme;
-            document.getElementById('settingsModal').showModal();
-        };
-
-        window.saveSettings = function() {
-            localStorage.setItem('bg_unit', document.getElementById('settingUnit').value);
-            localStorage.setItem('time_format', document.getElementById('settingTimeFormat').value);
-            localStorage.setItem('custom_title', document.getElementById('settingTitle').value || '昕蓉的CGM');
-            localStorage.setItem('theme', document.getElementById('settingTheme').value);
-            document.getElementById('settingsModal').close();
-            window.location.reload();
-        };
-
-        function formatBG(valMgdl) {
-            if (currentUnit === 'mmol/L') return parseFloat((valMgdl / 18.0182).toFixed(1));
-            return parseFloat(valMgdl);
-        }
-
-        function applyUnit() {
-            document.querySelectorAll('.bg-val-num').forEach(el => {
-                const mgdl = parseFloat(el.getAttribute('data-mgdl'));
-                if (!isNaN(mgdl)) el.innerText = formatBG(mgdl);
-            });
-            const getTrendArrow = (dir) => {
-                const arrows = { 'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊' };
-                return arrows[dir] || dir || '';
-            };
-            document.querySelectorAll('.bg-dir').forEach(el => {
-                const dir = el.getAttribute('data-dir');
-                if (dir) el.innerText = getTrendArrow(dir);
-            });
-            const latestEntryEl = document.querySelector('.bg-val-num');
-            const latestDirEl = document.querySelector('.bg-dir');
-            if (latestEntryEl && latestDirEl) {
-                const rawVal = parseFloat(latestEntryEl.getAttribute('data-mgdl'));
-                if (!isNaN(rawVal)) {
-                    const bgVal = formatBG(rawVal);
-                    const arrow = getTrendArrow(latestDirEl.getAttribute('data-dir'));
-                    document.title = `${bgVal} ${arrow} | ${customTitle}`;
-                    const headerLiveBg = document.getElementById('header-live-bg');
-                    if (headerLiveBg) {
-                        headerLiveBg.style.display = 'inline-block';
-                        headerLiveBg.innerHTML = `${bgVal} ${arrow} <span style="font-size: 0.5em; opacity: 0.6;">${currentUnit}</span>`;
-                        if (rawVal > 180) headerLiveBg.style.color = 'var(--warning)';
-                        else if (rawVal < 70) headerLiveBg.style.color = 'var(--danger)';
-                        else headerLiveBg.style.color = 'var(--accent)';
-                    }
-                    
-                    // xDrip Header Update
-                    const xVal = document.getElementById('xdrip-val');
-                    const xArrow = document.getElementById('xdrip-arrow');
-                    const xDelta = document.getElementById('xdrip-delta');
-                    if (xVal) xVal.innerText = bgVal;
-                    if (xArrow) xArrow.innerText = arrow;
-                    if (xVal) {
-                        if (rawVal > 180) xVal.style.color = '#FF9F0A';
-                        else if (rawVal < 70) xVal.style.color = '#FF453A';
-                        else xVal.style.color = '#00BFFF';
-                    }
-                    
-                    // 計算與前一筆的差值 (Delta)
-                    if (chartDataPoints.length >= 2) {
-                        const latest = chartDataPoints[chartDataPoints.length - 1].y;
-                        const prev = chartDataPoints[chartDataPoints.length - 2].y;
-                        const delta = latest - prev;
-                        if (xDelta) xDelta.innerText = `${delta >= 0 ? '+' : ''}${delta} mg/dl`;
-                    }
-                }
+        async function triggerSync() {
+            try {
+                const res = await fetch('/api/v1/sync', { method: 'POST' });
+                const json = await res.json();
+                alert(json.status === 'success' ? '同步成功！' : '同步完成（若無 token 請點擊登入授權）。');
+                fetchDashboard();
+            } catch (e) {
+                alert('同步發生錯誤');
             }
         }
 
-        function updateLiveClock() {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString([], { 
-                hour: '2-digit', 
-                minute: '2-digit', 
-                second: '2-digit', 
-                hour12: timeFormat === '12' 
-            });
-            const clockEl = document.getElementById('current-time-display');
-            if (clockEl) clockEl.innerText = timeStr;
-            const topClockEl = document.getElementById('top-live-clock');
-            if (topClockEl) topClockEl.innerText = timeStr;
-        }
-        setInterval(updateLiveClock, 1000);
-        updateLiveClock();
-
-        applyUnit();
-        function updateAllTimeLabels() {
-            document.querySelectorAll('.local-time-display').forEach(el => {
-                const isoStr = el.getAttribute('data-time');
-                if (!isoStr) return;
-                const d = new Date(isoStr);
-                if (!isNaN(d.getTime())) {
-                    const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: timeFormat === '12'});
-                    const diffMs = new Date() - d;
-                    const diffMins = Math.floor(diffMs / 60000);
-                    let agoStr = '';
-                    if (diffMins < 1) agoStr = '剛剛';
-                    else if (diffMins < 60) agoStr = diffMins + ' 分鐘前';
-                    else agoStr = Math.floor(diffMins / 60) + ' 小時前';
-                    
-                    el.innerText = `${timeStr} (${agoStr})`;
-                    const xDripTime = document.getElementById('xdrip-time-ago');
-                    if (xDripTime && el === document.querySelector('.local-time-display')) {
-                        xDripTime.innerText = agoStr;
-                    }
-                }
-            });
-        }
-        updateAllTimeLabels();
-
-        let deferredPrompt;
-        const installBanner = document.getElementById('pwa-install-banner');
-        const installBtn = document.getElementById('manualInstallBtn');
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            if (installBanner) installBanner.style.display = 'block';
-        });
-        if (installBtn) {
-            installBtn.addEventListener('click', async () => {
-                if (!deferredPrompt) return;
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    deferredPrompt = null;
-                    if (installBanner) installBanner.style.display = 'none';
-                }
-            });
-        }
-        // 統計數據計算 (TIR, Avg)
-        function updateStats() {
-            if (!chartDataPoints || chartDataPoints.length === 0) return;
-            try {
-                const values = chartDataPoints.map(p => p.y);
-                const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-                const inRange = values.filter(v => v >= 70 && v <= 180).length;
-                const tir = Math.round((inRange / values.length) * 100);
-                
-                const tirEl = document.getElementById('stats-tir');
-                const avgEl = document.getElementById('stats-avg');
-                if (tirEl) {
-                    tirEl.innerText = tir + '%';
-                    if (tir >= 70) tirEl.style.color = 'var(--accent)';
-                    else if (tir >= 50) tirEl.style.color = 'var(--warning)';
-                    else tirEl.style.color = 'var(--danger)';
-                }
-                if (avgEl) avgEl.innerText = avg;
-            } catch (e) { console.error("Stats error:", e); }
-        }
-        updateStats();
-
-        // 預測曲線邏輯 (預測未來 30 分鐘)
-        function addPrediction() {
-            if (!chartDataPoints || chartDataPoints.length < 2) return;
-            try {
-                const latest = chartDataPoints[chartDataPoints.length - 1];
-                const prev = chartDataPoints[chartDataPoints.length - 2];
-                const timeDiff = latest.x - prev.x;
-                if (timeDiff <= 0) return; // 避免除以零或時間倒流
-                
-                const velocity = (latest.y - prev.y) / timeDiff; // mg/dl per ms
-                
-                const predictionPoints = [];
-                for (let i = 5; i <= 30; i += 5) {
-                    const pTime = new Date(latest.x.getTime() + i * 60000);
-                    const pVal = Math.round(latest.y + velocity * (i * 60000));
-                    if (pVal > 40 && pVal < 400) {
-                        predictionPoints.push({ x: pTime, y: pVal });
-                    }
-                }
-                
-                if (window.cgmChartInstance && predictionPoints.length > 0) {
-                    // 移除舊的預測線 (如果存在)
-                    window.cgmChartInstance.data.datasets = window.cgmChartInstance.data.datasets.filter(ds => ds.label !== '預測');
-                    
-                    window.cgmChartInstance.data.datasets.push({
-                        label: '預測',
-                        data: [latest, ...predictionPoints],
-                        borderColor: 'rgba(255, 255, 255, 0.3)',
-                        borderWidth: 2,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        fill: false
-                    });
-                    window.cgmChartInstance.update('none');
-                }
-            } catch (e) { console.error("Prediction error:", e); }
-        }
-        setTimeout(addPrediction, 800);
-
-        // 背景更新數據 (AJAX)
-        let lastAnnouncedTime = "";
-        async function refreshData() {
-            try {
-                const response = await fetch('/api/v2/chart_data');
-                const data = await response.json();
-                if (!data || data.length === 0) return;
-                
-                // 1. 更新圖表數據點
-                chartDataPoints.length = 0;
-                data.forEach(item => {
-                    chartDataPoints.push({ x: new Date(item.dateString), y: item.sgv || 0 });
-                });
-                
-                if (window.cgmChartInstance) {
-                    window.cgmChartInstance.data.datasets[0].data = chartDataPoints;
-                    // 更新點的顏色
-                    window.cgmChartInstance.data.datasets[0].pointBackgroundColor = chartDataPoints.map(p => {
-                        if (p.y >= 180) return '#FF9F0A';
-                        if (p.y <= 70) return '#FF453A';
-                        return '#00BFFF';
-                    });
-                    window.cgmChartInstance.update('none');
-                    addPrediction();
-                }
-                
-                // 2. 更新畫面上的數值
-                const latest = data[data.length - 1];
-                if (latest) {
-                    const sgv = latest.sgv || 0;
-                    document.querySelectorAll('.bg-val-num').forEach(el => el.setAttribute('data-mgdl', sgv));
-                    document.querySelectorAll('.bg-dir').forEach(el => el.setAttribute('data-dir', latest.direction));
-                    
-                    // 特殊處理：顏色模式的背景與文字變色
-                    const colorContainer = document.getElementById('full-color-container');
-                    if (colorContainer) {
-                        colorContainer.classList.remove('bg-normal', 'bg-high', 'bg-low');
-                        if (sgv > 180) colorContainer.classList.add('bg-high');
-                        else if (sgv < 70) colorContainer.classList.add('bg-low');
-                        else colorContainer.classList.add('bg-normal');
-                    }
-                    
-                    // 更新所有時間顯示標籤
-                    document.querySelectorAll('.local-time-display').forEach(el => {
-                        // 如果是最近一筆的時間標籤，則更新它
-                        if (el.classList.contains('local-time-display')) {
-                            // 更新為最新時間串，觸發下方 applyTimeFormats
-                            el.setAttribute('data-time', latest.dateString);
-                        }
-                    });
-                    
-                    applyUnit(); // 重新計算單位與標題
-                    updateStats(); // 重新計算 TIR
-                    updateAllTimeLabels(); // 重新整理「幾分鐘前」文字
-                    
-                    // 3. 語音播報與警報 (如果時間有更新)
-                    if (latest.dateString !== lastAnnouncedTime) {
-                        lastAnnouncedTime = latest.dateString;
-                        announceBG(latest.sgv, latest.direction);
-                        if (latest.sgv < 70) playAlarm();
-                    }
-                }
-            } catch (e) { console.error("Refresh error:", e); }
-        }
-
-        function announceBG(val, dir) {
-            const text = `血糖${val}`;
-            const audio = new Audio(`/api/v1/tts?text=${encodeURIComponent(text)}&t=${Date.now()}`);
-            audio.play().catch(e => console.log("Edge TTS play blocked", e));
-        }
-
-        function playAlarm() {
-            const audio = new Audio('/static/alert.mp3');
-            audio.play().catch(e => console.log("Audio play blocked by browser"));
-        }
-
-        // 每 60 秒背景更新一次
-        setInterval(refreshData, 60000);
-
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW Reg OK')).catch(err => console.log('SW Reg Fail', err));
-            });
-        }
+        fetchDashboard();
+        setInterval(fetchDashboard, 30000); // 30 秒自動刷洗介面
     </script>
 </body>
 </html>

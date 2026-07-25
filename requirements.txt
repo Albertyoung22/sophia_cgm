@@ -1,11 +1,7 @@
 flask
 requests
-waitress
-edge-tts==7.2.8
-gunicorn
-pymongo
-dnspython
 matplotlib
-pillow
 numpy
-scipy
+gunicorn
+psycopg2-binary
+pymongo
