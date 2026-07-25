@@ -39,6 +39,13 @@ last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
+def ensure_https(url):
+    if not url:
+        return url
+    if url.startswith("http://"):
+        return url.replace("http://", "https://", 1)
+    return url
+
 def get_direction_emoji(direction):
     mapping = {
         "DoubleUp": "⇈",
@@ -61,6 +68,7 @@ def send_line_message(text, image_url=None):
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
     
+    image_url = ensure_https(image_url)
     messages = [{"type": "text", "text": text}]
     if image_url:
         messages.append({
@@ -72,14 +80,18 @@ def send_line_message(text, image_url=None):
     data = {"messages": messages}
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
-        print(f"[LINE] Broadcast status: {response.status_code}")
+        print(f"[LINE Broadcast] Status: {response.status_code}, Resp: {response.text}")
     except Exception as e:
         print(f"[LINE Broadcast Error] {e}")
 
 def reply_line_message(reply_token, text, image_url=None):
+    if not LINE_ACCESS_TOKEN:
+        print("[LINE Reply] Skip: No Token")
+        return
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
     
+    image_url = ensure_https(image_url)
     messages = [{"type": "text", "text": text}]
     if image_url:
         messages.append({
@@ -94,7 +106,7 @@ def reply_line_message(reply_token, text, image_url=None):
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
-        print(f"[LINE Reply] Status: {response.status_code}")
+        print(f"[LINE Reply] Status: {response.status_code}, Resp: {response.text}")
     except Exception as e:
         print(f"[LINE Reply Error] {e}")
 
@@ -369,7 +381,7 @@ def trigger_daily_report():
         if generate_summary_chart(24):
             now_ts = int(time.time())
             host_url = request.host_url.rstrip('/')
-            chart_url = f"{host_url}/static/summary_chart.png?t={now_ts}"
+            chart_url = ensure_https(f"{host_url}/static/summary_chart.png?t={now_ts}")
         
         msg = (
             f"📊 【每日血糖自動結算】\n"
@@ -391,7 +403,7 @@ def trigger_daily_report():
 def line_callback():
     body = request.get_json(silent=True) or {}
     events = body.get('events', [])
-    host_url = request.host_url.rstrip('/')
+    host_url = ensure_https(request.host_url.rstrip('/'))
     
     def process_line_events_async(event_list, base_host):
         for event in event_list:
@@ -411,7 +423,7 @@ def line_callback():
                         chart_url = None
                         if generate_line_chart():
                             now_ts = int(time.time())
-                            chart_url = f"{base_host}/static/line_chart.png?t={now_ts}"
+                            chart_url = ensure_https(f"{base_host}/static/line_chart.png?t={now_ts}")
                             
                         dir_emoji = get_direction_emoji(latest.get('direction'))
                         msg = f"【即時血糖查詢】\n🩸 數值: {latest['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
@@ -425,7 +437,7 @@ def line_callback():
                         chart_url = None
                         if generate_summary_chart(24):
                             now_ts = int(time.time())
-                            chart_url = f"{base_host}/static/summary_chart.png?t={now_ts}"
+                            chart_url = ensure_https(f"{base_host}/static/summary_chart.png?t={now_ts}")
                         
                         msg = (
                             f"📊 【過去 24 小時報表】\n"
@@ -504,7 +516,7 @@ def check_and_push_alerts(data):
         if is_urgent:
             if generate_line_chart():
                 now_ts = int(now.timestamp())
-                chart_url = f"https://sophia-cgm.onrender.com/static/line_chart.png?t={now_ts}"
+                chart_url = "https://sophia-cgm.onrender.com/static/line_chart.png?t=" + str(now_ts)
 
         dir_emoji = get_direction_emoji(data.get('direction'))
         msg = f"【{'🚨 警告' if is_urgent else '📊 目前血糖'}】\n🩸 數值: {val} mg/dL\n📈 趨勢: {dir_emoji} ({data.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
