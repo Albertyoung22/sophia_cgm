@@ -3,12 +3,16 @@ import time
 import json
 import asyncio
 import threading
+import warnings
 from datetime import datetime, timezone, timedelta
 import requests
 from flask import Flask, jsonify, render_template, request, send_file, send_from_directory, make_response
 
 import database
 from carelink_client import CareLinkClient
+
+# Suppress Matplotlib CJK Glyph warnings on Linux environments like Render
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # Matplotlib Setup for Headless Chart Generation
 import matplotlib
@@ -89,7 +93,8 @@ def reply_line_message(reply_token, text, image_url=None):
         "messages": messages
     }
     try:
-        requests.post(url, headers=headers, json=data, timeout=10)
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        print(f"[LINE Reply] Status: {response.status_code}")
     except Exception as e:
         print(f"[LINE Reply Error] {e}")
 
@@ -188,7 +193,7 @@ def generate_line_chart():
         plt.grid(color=GRID_COLOR, linestyle='-', linewidth=0.5, alpha=0.8)
         
         last_update = latest_time.strftime('%m/%d %H:%M')
-        plt.title(f"血糖趨勢圖 ({last_update})", color=TEXT_COLOR, fontsize=12, pad=15, fontweight='bold')
+        plt.title(f"Glucose Trend ({last_update})", color=TEXT_COLOR, fontsize=12, pad=15, fontweight='bold')
         
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
@@ -246,7 +251,7 @@ def generate_summary_chart(hours=24):
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=tz_tw))
         plt.grid(color='#222222', linestyle='--', linewidth=0.5)
         
-        plt.title(f"過去 {hours} 小時趨勢圖", color='white', pad=20, fontsize=12)
+        plt.title(f"Past {hours} Hours Trend", color='white', pad=20, fontsize=12)
         plt.tight_layout()
         
         output_path = os.path.join(STATIC_DIR, "summary_chart.png")
@@ -381,13 +386,16 @@ def trigger_daily_report():
         return jsonify({"status": "success", "stats": stats})
     return jsonify({"status": "no_data"}), 200
 
-# LINE Webhook (處理廣播與即時查詢)
+# LINE Webhook (處理廣播與即時查詢，採異步非阻塞處理避免 Gunicorn Timeout)
 @app.route("/callback", methods=['POST'])
 def line_callback():
     body = request.get_json(silent=True) or {}
-    try:
-        for event in body.get('events', []):
-            if event['type'] == 'message' and event['message']['type'] == 'text':
+    events = body.get('events', [])
+    host_url = request.host_url.rstrip('/')
+    
+    def process_line_events_async(event_list, base_host):
+        for event in event_list:
+            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
                 user_msg = event['message']['text'].strip()
                 reply_token = event['replyToken']
                 
@@ -403,8 +411,7 @@ def line_callback():
                         chart_url = None
                         if generate_line_chart():
                             now_ts = int(time.time())
-                            host_url = request.host_url.rstrip('/')
-                            chart_url = f"{host_url}/static/line_chart.png?t={now_ts}"
+                            chart_url = f"{base_host}/static/line_chart.png?t={now_ts}"
                             
                         dir_emoji = get_direction_emoji(latest.get('direction'))
                         msg = f"【即時血糖查詢】\n🩸 數值: {latest['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
@@ -418,8 +425,7 @@ def line_callback():
                         chart_url = None
                         if generate_summary_chart(24):
                             now_ts = int(time.time())
-                            host_url = request.host_url.rstrip('/')
-                            chart_url = f"{host_url}/static/summary_chart.png?t={now_ts}"
+                            chart_url = f"{base_host}/static/summary_chart.png?t={now_ts}"
                         
                         msg = (
                             f"📊 【過去 24 小時報表】\n"
@@ -435,9 +441,11 @@ def line_callback():
                         reply_line_message(reply_token, msg, chart_url)
                     else:
                         reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
-    except Exception as e:
-        print(f"[Webhook Error] {e}")
-    return 'OK'
+
+    if events:
+        threading.Thread(target=process_line_events_async, args=(events, host_url), daemon=True).start()
+
+    return 'OK', 200
 
 @app.route('/api/v1/tts')
 def get_tts():
