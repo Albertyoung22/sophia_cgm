@@ -29,9 +29,10 @@ database.init_db()
 
 client = CareLinkClient()
 
-# LINE & API Secrets
+# LINE & API Secrets & Public Host
 API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=").strip()
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://sophia-cgm.onrender.com").rstrip("/")
 
 # Last Push Notification State Tracker
 last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "type": "normal"}
@@ -380,8 +381,7 @@ def trigger_daily_report():
         chart_url = None
         if generate_summary_chart(24):
             now_ts = int(time.time())
-            host_url = request.host_url.rstrip('/')
-            chart_url = ensure_https(f"{host_url}/static/summary_chart.png?t={now_ts}")
+            chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
         
         msg = (
             f"📊 【每日血糖自動結算】\n"
@@ -403,59 +403,65 @@ def trigger_daily_report():
 def line_callback():
     body = request.get_json(silent=True) or {}
     events = body.get('events', [])
-    host_url = ensure_https(request.host_url.rstrip('/'))
     
-    def process_line_events_async(event_list, base_host):
+    def process_line_events_async(event_list):
         for event in event_list:
-            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
-                user_msg = event['message']['text'].strip()
-                reply_token = event['replyToken']
-                
-                if user_msg == "血糖" or user_msg.lower() == "bg":
-                    latest = database.get_latest_entry()
-                    if latest:
-                        try:
-                            dt_in = datetime.fromisoformat(latest['dateString'].replace('Z', '+00:00'))
-                            local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
-                        except Exception:
-                            local_time = latest['dateString']
-                        
-                        chart_url = None
-                        if generate_line_chart():
-                            now_ts = int(time.time())
-                            chart_url = ensure_https(f"{base_host}/static/line_chart.png?t={now_ts}")
+            try:
+                if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
+                    user_msg = event['message']['text'].strip()
+                    reply_token = event['replyToken']
+                    print(f"[LINE Webhook Message] Received: {user_msg}")
+                    
+                    if "血糖" in user_msg or "bg" in user_msg.lower():
+                        latest = database.get_latest_entry()
+                        if latest:
+                            try:
+                                dt_in = datetime.fromisoformat(latest['dateString'].replace('Z', '+00:00'))
+                                local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
+                            except Exception:
+                                local_time = latest['dateString']
                             
-                        dir_emoji = get_direction_emoji(latest.get('direction'))
-                        msg = f"【即時血糖查詢】\n🩸 數值: {latest['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
-                        reply_line_message(reply_token, msg, chart_url)
-                    else:
-                        reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
+                            chart_url = None
+                            if generate_line_chart():
+                                now_ts = int(time.time())
+                                chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
+                                
+                            dir_emoji = get_direction_emoji(latest.get('direction'))
+                            msg = f"【即時血糖查詢】\n🩸 數值: {latest['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
+                            reply_line_message(reply_token, msg, chart_url)
+                        else:
+                            reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
 
-                elif user_msg in ["報表", "報告", "report"]:
-                    stats = database.get_daily_stats(24)
-                    if stats:
-                        chart_url = None
-                        if generate_summary_chart(24):
-                            now_ts = int(time.time())
-                            chart_url = ensure_https(f"{base_host}/static/summary_chart.png?t={now_ts}")
-                        
-                        msg = (
-                            f"📊 【過去 24 小時報表】\n"
-                            f"━━━━━━━━━━━━━━━\n"
-                            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
-                            f"🔹 TIR (範圍內): {stats['tir']}%\n"
-                            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
-                            f"🔹 偏高比例: {stats['high']}%\n"
-                            f"🔹 偏低比例: {stats['low']}%\n"
-                            f"━━━━━━━━━━━━━━━\n"
-                            f"共分析 {stats['count']} 筆數據"
-                        )
-                        reply_line_message(reply_token, msg, chart_url)
+                    elif any(kw in user_msg for kw in ["報表", "報告", "report"]):
+                        stats = database.get_daily_stats(24)
+                        if stats:
+                            chart_url = None
+                            if generate_summary_chart(24):
+                                now_ts = int(time.time())
+                                chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
+                            
+                            msg = (
+                                f"📊 【過去 24 小時報表】\n"
+                                f"━━━━━━━━━━━━━━━\n"
+                                f"🔹 平均血糖: {stats['avg']} mg/dL\n"
+                                f"🔹 TIR (範圍內): {stats['tir']}%\n"
+                                f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
+                                f"🔹 偏高比例: {stats['high']}%\n"
+                                f"🔹 偏低比例: {stats['low']}%\n"
+                                f"━━━━━━━━━━━━━━━\n"
+                                f"共分析 {stats['count']} 筆數據"
+                            )
+                            reply_line_message(reply_token, msg, chart_url)
+                        else:
+                            reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
                     else:
-                        reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
+                        msg = "您可以回覆「血糖」查詢最新數值，或回覆「報表」查看 24H 統計。"
+                        reply_line_message(reply_token, msg)
+            except Exception as e:
+                print(f"[Async LINE Event Error] {e}")
 
     if events:
-        threading.Thread(target=process_line_events_async, args=(events, host_url), daemon=True).start()
+        threading.Thread(target=process_line_events_async, args=(events,), daemon=True).start()
 
     return 'OK', 200
 
@@ -516,7 +522,7 @@ def check_and_push_alerts(data):
         if is_urgent:
             if generate_line_chart():
                 now_ts = int(now.timestamp())
-                chart_url = "https://sophia-cgm.onrender.com/static/line_chart.png?t=" + str(now_ts)
+                chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
 
         dir_emoji = get_direction_emoji(data.get('direction'))
         msg = f"【{'🚨 警告' if is_urgent else '📊 目前血糖'}】\n🩸 數值: {val} mg/dL\n📈 趨勢: {dir_emoji} ({data.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
