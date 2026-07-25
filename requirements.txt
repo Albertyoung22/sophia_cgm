@@ -2,6 +2,9 @@ flask
 requests
 matplotlib
 numpy
+scipy
+edge-tts
 gunicorn
 psycopg2-binary
 pymongo
+
