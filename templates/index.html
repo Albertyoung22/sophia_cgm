@@ -345,7 +345,7 @@
 
         async function fetchDashboard() {
             try {
-                const res = await fetch('/api/v1/entries');
+                const res = await fetch('/api/v1/entries?_=' + Date.now());
                 const data = await res.json();
                 
                 if (data.latest) {

@@ -14,6 +14,13 @@ client = CareLinkClient()
 def index():
     return render_template('index.html')
 
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 @app.route('/api/v1/entries', methods=['GET'])
 def get_entries():
     # 如果有 count 參數，或者 Accept 要求 JSON 且不是來自儀表板，則回傳 Nightscout 相容格式
