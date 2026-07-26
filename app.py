@@ -64,7 +64,7 @@ def get_direction_emoji(direction):
 
 def send_line_message(text, image_url=None):
     if not LINE_ACCESS_TOKEN:
-        print("[LINE] Skip: No Token")
+        print("[LINE Broadcast] Skip: No Token")
         return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
@@ -398,71 +398,64 @@ def trigger_daily_report():
         return jsonify({"status": "success", "stats": stats})
     return jsonify({"status": "no_data"}), 200
 
-# LINE Webhook (處理廣播與即時查詢，採異步非阻塞處理避免 Gunicorn Timeout)
+# LINE Webhook (回復與 SophisCGM 100% 一致的同步執行邏輯)
 @app.route("/callback", methods=['POST'])
 def line_callback():
     body = request.get_json(silent=True) or {}
-    events = body.get('events', [])
-    
-    def process_line_events_async(event_list):
-        for event in event_list:
-            try:
-                if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
-                    user_msg = event['message']['text'].strip()
-                    reply_token = event['replyToken']
-                    print(f"[LINE Webhook Message] Received: {user_msg}")
-                    
-                    if "血糖" in user_msg or "bg" in user_msg.lower():
-                        latest = database.get_latest_entry()
-                        if latest:
-                            try:
-                                dt_in = datetime.fromisoformat(latest['dateString'].replace('Z', '+00:00'))
-                                local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
-                            except Exception:
-                                local_time = latest['dateString']
+    print(f"[LINE Webhook Body] Received: {json.dumps(body)}")
+    try:
+        for event in body.get('events', []):
+            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
+                user_msg = event['message']['text'].strip()
+                reply_token = event['replyToken']
+                print(f"[LINE Message] User typed: {user_msg}")
+                
+                if user_msg == "血糖" or user_msg.lower() == "bg":
+                    latest = database.get_latest_entry()
+                    if latest:
+                        try:
+                            dt_in = datetime.fromisoformat(latest['dateString'].replace('Z', '+00:00'))
+                            local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
+                        except Exception:
+                            local_time = latest['dateString']
+                        
+                        chart_url = None
+                        if generate_line_chart():
+                            now_ts = int(time.time())
+                            chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
                             
-                            chart_url = None
-                            if generate_line_chart():
-                                now_ts = int(time.time())
-                                chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
-                                
-                            dir_emoji = get_direction_emoji(latest.get('direction'))
-                            msg = f"【即時血糖查詢】\n🩸 數值: {latest['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
-                            reply_line_message(reply_token, msg, chart_url)
-                        else:
-                            reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
-
-                    elif any(kw in user_msg for kw in ["報表", "報告", "report"]):
-                        stats = database.get_daily_stats(24)
-                        if stats:
-                            chart_url = None
-                            if generate_summary_chart(24):
-                                now_ts = int(time.time())
-                                chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
-                            
-                            msg = (
-                                f"📊 【過去 24 小時報表】\n"
-                                f"━━━━━━━━━━━━━━━\n"
-                                f"🔹 平均血糖: {stats['avg']} mg/dL\n"
-                                f"🔹 TIR (範圍內): {stats['tir']}%\n"
-                                f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
-                                f"🔹 偏高比例: {stats['high']}%\n"
-                                f"🔹 偏低比例: {stats['low']}%\n"
-                                f"━━━━━━━━━━━━━━━\n"
-                                f"共分析 {stats['count']} 筆數據"
-                            )
-                            reply_line_message(reply_token, msg, chart_url)
-                        else:
-                            reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
+                        dir_emoji = get_direction_emoji(latest.get('direction'))
+                        msg = f"【即時查詢】\n🩸 數值: {latest['sgv']}\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
+                        reply_line_message(reply_token, msg, chart_url)
+                        print(f"✅ 已回覆即時數據: {latest['sgv']} at {local_time}")
                     else:
-                        msg = "您可以回覆「血糖」查詢最新數值，或回覆「報表」查看 24H 統計。"
-                        reply_line_message(reply_token, msg)
-            except Exception as e:
-                print(f"[Async LINE Event Error] {e}")
+                        reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
 
-    if events:
-        threading.Thread(target=process_line_events_async, args=(events,), daemon=True).start()
-
+                elif user_msg in ["報表", "報告", "report"]:
+                    stats = database.get_daily_stats(24)
+                    if stats:
+                        chart_url = None
+                        if generate_summary_chart(24):
+                            now_ts = int(time.time())
+                            chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
+                        
+                        msg = (
+                            f"📊 【過去 24 小時報表】\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
+                            f"🔹 TIR (範圍內): {stats['tir']}%\n"
+                            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
+                            f"🔹 偏高比例: {stats['high']}%\n"
+                            f"🔹 偏低比例: {stats['low']}%\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"共分析 {stats['count']} 筆數據"
+                        )
+                        reply_line_message(reply_token, msg, chart_url)
+                        print(f"✅ 已回覆 24H 報表: Avg {stats['avg']}")
+                    else:
+                        reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
+    except Exception as e:
+        print(f"[LINE Callback Exception] {e}")
     return 'OK', 200
 
 @app.route('/api/v1/tts')
