@@ -319,6 +319,54 @@ def get_entries():
         "stats": stats
     })
 
+@app.route('/api/v1/login', methods=['POST'])
+def trigger_login():
+    req_data = request.get_json(silent=True) or {}
+    username = req_data.get('username') or client.username
+    password = req_data.get('password') or client.password
+    mode = req_data.get('mode', 'window')
+    
+    if mode == 'window':
+        success, msg = client.login_with_chrome_window(username, password)
+    else:
+        success, msg = client.login_with_selenium(username, password)
+
+    if success:
+        c_data = client.get_recent_data()
+        if c_data:
+            database.save_entry(
+                sgv=c_data['sgv'],
+                direction=c_data['direction'],
+                date_string=c_data['dateString'],
+                timestamp=c_data['date'],
+                device=c_data['device']
+            )
+            generate_line_chart()
+        return jsonify({"status": "success", "message": msg, "data": c_data})
+    else:
+        return jsonify({"status": "error", "message": msg}), 400
+
+@app.route('/api/v1/token', methods=['POST'])
+def update_token():
+    req_data = request.get_json(silent=True) or {}
+    token_str = req_data.get('token') or req_data.get('access_token') or ""
+    
+    success, msg = client.set_manual_token(token_str)
+    if success:
+        c_data = client.get_recent_data()
+        if c_data:
+            database.save_entry(
+                sgv=c_data['sgv'],
+                direction=c_data['direction'],
+                date_string=c_data['dateString'],
+                timestamp=c_data['date'],
+                device=c_data['device']
+            )
+            generate_line_chart()
+        return jsonify({"status": "success", "message": msg, "data": c_data})
+    else:
+        return jsonify({"status": "error", "message": msg}), 400
+
 @app.route('/api/v1/sync', methods=['POST', 'GET'])
 def trigger_sync():
     data = client.get_recent_data()
@@ -332,6 +380,22 @@ def trigger_sync():
         )
         generate_line_chart()
         return jsonify({"status": "success", "data": data, "saved": saved})
+    else:
+        print("[Manual Sync] Token 到期或擷取失敗，嘗試啟動自動續約...")
+        ok, msg = client.login_with_selenium()
+        if ok:
+            data = client.get_recent_data()
+            if data:
+                saved = database.save_entry(
+                    sgv=data['sgv'],
+                    direction=data['direction'],
+                    date_string=data['dateString'],
+                    timestamp=data['date'],
+                    device=data['device']
+                )
+                generate_line_chart()
+                return jsonify({"status": "success", "data": data, "saved": saved, "message": "自動登入與數據同步成功"})
+
     return jsonify({
         "status": "warning",
         "message": client.last_status or "CareLink 伺服器尚未回應或 Token 需更新"
@@ -430,6 +494,29 @@ def line_callback():
                         print(f"✅ 已回覆即時數據: {latest['sgv']} at {local_time}")
                     else:
                         reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
+
+                elif user_msg in ["同步", "sync", "連線", "login", "登入"]:
+                    data = client.get_recent_data()
+                    if not data:
+                        client.login_with_selenium()
+                        data = client.get_recent_data()
+
+                    if data:
+                        database.save_entry(
+                            sgv=data['sgv'],
+                            direction=data['direction'],
+                            date_string=data['dateString'],
+                            timestamp=data['date'],
+                            device=data['device']
+                        )
+                        generate_line_chart()
+                        dt_in = datetime.fromisoformat(data['dateString'].replace('Z', '+00:00'))
+                        local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
+                        dir_emoji = get_direction_emoji(data['direction'])
+                        msg = f"【同步完成】\n🩸 最新血糖: {data['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({data['direction']})\n⏰ 時間: {local_time}"
+                        reply_line_message(reply_token, msg)
+                    else:
+                        reply_line_message(reply_token, f"同步失敗: {client.last_status}")
 
                 elif user_msg in ["報表", "報告", "report"]:
                     stats = database.get_daily_stats(24)
@@ -553,5 +640,5 @@ start_background_loop()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    print(f"SophiaCarelink Python Service Starting: http://localhost:{port}")
+    print(f"SophiaCarelink All-in-One Python Service Starting: http://localhost:{port}")
     app.run(host='0.0.0.0', port=port, debug=False)
