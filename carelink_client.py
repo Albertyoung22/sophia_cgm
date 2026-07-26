@@ -5,7 +5,7 @@ import requests
 from datetime import datetime, timezone
 
 CARELINK_USERNAME = os.environ.get("CARELINK_USERNAME", "Sophiafa")
-CARELINK_PASSWORD = os.environ.get("CARELINK_PASSWORD", "[user provided password]")
+CARELINK_PASSWORD = os.environ.get("CARELINK_PASSWORD", "20151120")
 TOKEN_FILE = os.path.join(os.path.dirname(__file__), "logindata.json")
 HOST = "carelink.minimed.eu"
 
@@ -43,7 +43,9 @@ class CareLinkClient:
                     
                     if "cookies" in self.token_data:
                         for k, v in self.token_data["cookies"].items():
-                            self.session.cookies.set(k, v, domain=HOST)
+                            self.session.cookies.set(k, v, domain=".minimed.eu")
+                            self.session.cookies.set(k, v, domain="carelink.minimed.eu")
+                            self.session.cookies.set(k, v, domain="carelink-login.minimed.eu")
 
                     token_val = self.token_data.get("access_token")
                     if token_val and token_val != "web_session_active":
