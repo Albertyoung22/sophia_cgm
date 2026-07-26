@@ -112,6 +112,24 @@
             box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
         }
 
+        .btn-green {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        .btn-green:hover {
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+        }
+
+        .btn-outline:hover {
+            border-color: var(--accent-blue);
+        }
+
         /* Dashboard Grid */
         .grid-main {
             display: grid;
@@ -255,6 +273,8 @@
             border-radius: 12px;
             font-size: 0.85rem;
             color: var(--text-sub);
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
         .dot {
@@ -264,6 +284,121 @@
             display: inline-block;
             background: var(--accent-green);
             box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .dot-red {
+            background: var(--accent-red);
+            box-shadow: 0 0 8px var(--accent-red);
+        }
+
+        /* Modal styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            width: 100%;
+            max-width: 520px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-sub);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .input-group label {
+            font-size: 0.85rem;
+            color: var(--text-sub);
+        }
+
+        .input-control {
+            background: #0f1524;
+            border: 1px solid var(--card-border);
+            color: var(--text-main);
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            outline: none;
+        }
+
+        .input-control:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .modal-tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-sub);
+            font-weight: 600;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+
+        .tab-btn.active {
+            background: rgba(0, 176, 255, 0.15);
+            color: var(--accent-blue);
+        }
+
+        .status-msg {
+            font-size: 0.85rem;
+            padding: 10px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status-msg.success {
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+            display: block;
+        }
+
+        .status-msg.error {
+            background: rgba(255, 82, 82, 0.15);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+            display: block;
         }
     </style>
 </head>
@@ -279,6 +414,7 @@
                 </div>
             </div>
             <div class="header-actions">
+                <button class="btn btn-green" onclick="openAuthModal()">🔑 登入 / Token</button>
                 <button class="btn" onclick="triggerSync()">🔄 手動同步</button>
             </div>
         </header>
@@ -333,10 +469,59 @@
         <!-- Status Footer -->
         <div class="status-bar">
             <div>
-                <span class="dot"></span> CareLink 連線狀態: <strong id="status-text" style="color:#fff;">連線成功</strong>
-                <span style="margin-left: 12px; padding: 3px 10px; background: rgba(34, 197, 94, 0.15); border: 1px solid var(--accent-green); border-radius: 20px; font-size: 0.75rem; color: var(--accent-green); font-weight: 500;">🟢 Token 自動續約生效中</span>
+                <span class="dot" id="status-dot"></span> CareLink 連線狀態: <strong id="status-text" style="color:#fff;">連線檢查中</strong>
+                <span id="token-badge" style="margin-left: 12px; padding: 3px 10px; background: rgba(34, 197, 94, 0.15); border: 1px solid var(--accent-green); border-radius: 20px; font-size: 0.75rem; color: var(--accent-green); font-weight: 500;">🟢 Token 自動續約生效中</span>
             </div>
             <div>帳號: <strong>Sophiafa</strong> | 設備: Medtronic MiniMed</div>
+        </div>
+    </div>
+
+    <!-- Login & Token Modal -->
+    <div class="modal-overlay" id="authModal">
+        <div class="modal-card">
+            <div class="modal-title">
+                <span>🔑 Medtronic CareLink 帳號授權</span>
+                <button class="close-btn" onclick="closeAuthModal()">&times;</button>
+            </div>
+            <div class="modal-tabs">
+                <button class="tab-btn active" id="tabAutoBtn" onclick="switchTab('auto')">⚡ 瀏覽器登入</button>
+                <button class="tab-btn" id="tabManualBtn" onclick="switchTab('manual')">📝 手動貼上 Token</button>
+            </div>
+
+            <!-- Status alert inside modal -->
+            <div class="status-msg" id="modalMsg"></div>
+
+            <!-- Tab Auto Login -->
+            <div id="tabAutoContent" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="input-group">
+                    <label>CareLink 帳號</label>
+                    <input type="text" id="loginUsername" class="input-control" value="Sophiafa" placeholder="請輸入 CareLink 帳號">
+                </div>
+                <div class="input-group">
+                    <label>CareLink 密碼</label>
+                    <input type="password" id="loginPassword" class="input-control" value="20151120" placeholder="請輸入 CareLink 密碼">
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+                    <button class="btn btn-green" id="btnDoWindowLogin" style="justify-content: center; width: 100%;" onclick="doAutoLogin('window')">
+                        🖥️ 開啟 Chrome 視窗登入 (推薦，過 reCAPTCHA 人機驗證)
+                    </button>
+                    <button class="btn btn-outline" id="btnDoHeadlessLogin" style="justify-content: center; width: 100%; font-size: 0.85rem;" onclick="doAutoLogin('headless')">
+                        ⚡ 免視窗靜默登入試驗
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Manual Token -->
+            <div id="tabManualContent" style="display: none; flex-direction: column; gap: 14px;">
+                <div class="input-group">
+                    <label>請貼上 auth_tmp_token 或 Token JSON</label>
+                    <textarea id="manualTokenInput" class="input-control" rows="4" placeholder="在此處貼上瀏覽器中的 Session Token..."></textarea>
+                </div>
+                <button class="btn" style="justify-content: center; width: 100%; margin-top: 6px;" onclick="doManualToken()">
+                    💾 儲存並啟用 Token
+                </button>
+            </div>
         </div>
     </div>
 
@@ -353,7 +538,6 @@
                     const valElem = document.getElementById('glucose-val');
                     valElem.innerText = val;
 
-                    // 顏色變化
                     if (val > 180) valElem.style.color = 'var(--accent-orange)';
                     else if (val < 70) valElem.style.color = 'var(--accent-red)';
                     else valElem.style.color = 'var(--accent-green)';
@@ -376,9 +560,34 @@
                 if (data.history && data.history.length > 0) {
                     renderChart(data.history);
                 }
+
+                fetchStatus();
             } catch (err) {
                 console.error("Dashboard error:", err);
             }
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/v1/status?_=' + Date.now());
+                const json = await res.json();
+                const statusTxt = document.getElementById('status-text');
+                const dot = document.getElementById('status-dot');
+                const badge = document.getElementById('token-badge');
+
+                statusTxt.innerText = json.last_status || '運作中';
+                if (json.last_status && json.last_status.includes('連線成功')) {
+                    dot.className = 'dot';
+                    badge.style.borderColor = 'var(--accent-green)';
+                    badge.style.color = 'var(--accent-green)';
+                    badge.innerText = '🟢 Token 自動續約生效中';
+                } else {
+                    dot.className = 'dot dot-red';
+                    badge.style.borderColor = 'var(--accent-red)';
+                    badge.style.color = 'var(--accent-red)';
+                    badge.innerText = '🔴 Token 到期 (請點擊登入續約)';
+                }
+            } catch (e) {}
         }
 
         function getDirectionIcon(dir) {
@@ -430,15 +639,118 @@
             try {
                 const res = await fetch('/api/v1/sync', { method: 'POST' });
                 const json = await res.json();
-                alert(json.status === 'success' ? '同步成功！' : '同步完成（若無 token 請點擊登入授權）。');
+                if (json.status === 'success') {
+                    alert('✅ 同步成功！已獲取最新數據');
+                } else {
+                    alert('⚠️ ' + (json.message || 'CareLink 伺服器尚未回應，若 Token 到期請點選 [🔑 登入 / Token] 更新'));
+                }
                 fetchDashboard();
             } catch (e) {
-                alert('同步發生錯誤');
+                alert('同步過程發生網路錯誤');
+            }
+        }
+
+        function openAuthModal() {
+            document.getElementById('authModal').style.display = 'flex';
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authModal').style.display = 'none';
+        }
+
+        function switchTab(tab) {
+            const autoBtn = document.getElementById('tabAutoBtn');
+            const manualBtn = document.getElementById('tabManualBtn');
+            const autoContent = document.getElementById('tabAutoContent');
+            const manualContent = document.getElementById('tabManualContent');
+
+            if (tab === 'auto') {
+                autoBtn.classList.add('active');
+                manualBtn.classList.remove('active');
+                autoContent.style.display = 'flex';
+                manualContent.style.display = 'none';
+            } else {
+                manualBtn.classList.add('active');
+                autoBtn.classList.remove('active');
+                manualContent.style.display = 'flex';
+                autoContent.style.display = 'none';
+            }
+        }
+
+        function showModalMsg(msg, isSuccess) {
+            const el = document.getElementById('modalMsg');
+            el.innerText = msg;
+            el.className = isSuccess ? 'status-msg success' : 'status-msg error';
+        }
+
+        async function doAutoLogin(mode) {
+            const u = document.getElementById('loginUsername').value;
+            const p = document.getElementById('loginPassword').value;
+            const btnWin = document.getElementById('btnDoWindowLogin');
+            const btnHead = document.getElementById('btnDoHeadlessLogin');
+
+            btnWin.disabled = true;
+            btnHead.disabled = true;
+
+            if (mode === 'window') {
+                showModalMsg('🖥️ 正在開啟 Chrome 視窗，將自動帶入帳號密碼，請勾選人機驗證 (reCAPTCHA) 並點擊登入...', true);
+            } else {
+                showModalMsg('⚡ 正在進行靜默自動登入，請稍候...', true);
+            }
+
+            try {
+                const res = await fetch('/api/v1/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p, mode: mode })
+                });
+                const json = await res.json();
+                if (json.status === 'success') {
+                    showModalMsg('🎉 ' + json.message, true);
+                    setTimeout(() => {
+                        closeAuthModal();
+                        fetchDashboard();
+                    }, 1500);
+                } else {
+                    showModalMsg('❌ 登入提示: ' + (json.message || '未知錯誤'), false);
+                }
+            } catch (e) {
+                showModalMsg('❌ 網路通訊異常: ' + e.message, false);
+            } finally {
+                btnWin.disabled = false;
+                btnHead.disabled = false;
+            }
+        }
+
+        async function doManualToken() {
+            const tok = document.getElementById('manualTokenInput').value;
+            if (!tok) {
+                showModalMsg('請輸入 Token 內容', false);
+                return;
+            }
+            try {
+                const res = await fetch('/api/v1/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: tok })
+                });
+                const json = await res.json();
+                if (json.status === 'success') {
+                    showModalMsg('🎉 ' + json.message, true);
+                    setTimeout(() => {
+                        closeAuthModal();
+                        fetchDashboard();
+                    }, 1200);
+                } else {
+                    showModalMsg('❌ 更新失敗: ' + json.message, false);
+                }
+            } catch (e) {
+                showModalMsg('❌ 網路通訊異常: ' + e.message, false);
             }
         }
 
         fetchDashboard();
-        setInterval(fetchDashboard, 30000); // 30 秒自動刷洗介面
+        setInterval(fetchDashboard, 30000);
     </script>
 </body>
 </html>

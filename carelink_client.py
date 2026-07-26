@@ -69,9 +69,259 @@ class CareLinkClient:
         }
         return mapping.get(str(trend_raw).upper(), "Flat")
 
+    def login_with_chrome_window(self, username=None, password=None):
+        uname = username or self.username or CARELINK_USERNAME
+        pwd = password or self.password or CARELINK_PASSWORD
+
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+            from selenium.webdriver.common.by import By
+            from webdriver_manager.chrome import ChromeDriverManager
+
+            opts = Options()
+            opts.add_argument('--start-maximized')
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=opts)
+            driver.set_page_load_timeout(60)
+
+            login_url = f"https://{HOST}/patient/sso/login?country=TW&lang=zh"
+            print(f"[CareLink Window Login] Opening {login_url}...")
+            driver.get(login_url)
+
+            time.sleep(3)
+
+            # 嘗試自動填入帳號與密碼
+            try:
+                user_input = None
+                pass_input = None
+                inputs = driver.find_elements(By.TAG_NAME, 'input')
+                for inp in inputs:
+                    inp_type = str(inp.get_attribute('type')).lower()
+                    inp_name = str(inp.get_attribute('name')).lower()
+                    inp_id = str(inp.get_attribute('id')).lower()
+                    if inp_type in ['text', 'email'] or 'user' in inp_name or 'user' in inp_id or inp_id == 'username':
+                        user_input = inp
+                    elif inp_type == 'password' or 'pass' in inp_name or 'pass' in inp_id or inp_id == 'password':
+                        pass_input = inp
+
+                if user_input and pass_input:
+                    js_set_val = """
+                    function setVal(input, val) {
+                        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                        nativeSetter.call(input, val);
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        input.dispatchEvent(new Event('blur', { bubbles: true }));
+                    }
+                    setVal(arguments[0], arguments[2]);
+                    setVal(arguments[1], arguments[3]);
+                    """
+                    driver.execute_script(js_set_val, user_input, pass_input, uname, pwd)
+                    print("[CareLink Window Login] 已自動帶入帳號與密碼！")
+            except Exception as fill_err:
+                print(f"[CareLink Window Login Auto-Fill Warning] {fill_err}")
+
+            print("[CareLink Window Login] 瀏覽器視窗已開啟，請通過人機驗證並點擊登入...")
+            token_saved = False
+            token_data = None
+
+            # 輪詢最多 3 分鐘 (180 秒) 擷取 Cookie
+            for sec in range(180):
+                time.sleep(1)
+                try:
+                    cookies = driver.get_cookies()
+                    cookie_dict = {c['name']: c['value'] for c in cookies}
+                    curr_url = driver.current_url
+
+                    if 'auth_tmp_token' in cookie_dict or ('patient' in curr_url and 'login' not in curr_url and len(cookie_dict) > 2):
+                        auth_token = cookie_dict.get('auth_tmp_token') or 'web_session_active'
+                        token_data = {
+                            'access_token': auth_token,
+                            'refresh_token': 'web_session_active',
+                            'scope': 'profile openid roles country',
+                            'client_id': '4fb211b8-f130-4398-b51e-28900bf68527',
+                            'client_secret': '',
+                            'mag-identifier': 'web-session',
+                            'cookies': cookie_dict
+                        }
+                        token_saved = True
+                        break
+                except Exception:
+                    break
+
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+            if token_saved and token_data:
+                with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(token_data, f, indent=4)
+                self.token_data = token_data
+                self.load_token()
+                self.last_status = "連線成功"
+                return True, "完成登入驗證，已擷取並寫入最新 Session Token！"
+            return False, "逾時或未擷取到 Session Token"
+        except Exception as e:
+            return False, f"開啟 Chrome 視窗登入異常: {e}"
+
+    def login_with_selenium(self, username=None, password=None):
+        uname = username or self.username or CARELINK_USERNAME
+        pwd = password or self.password or CARELINK_PASSWORD
+
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+            from selenium.webdriver.common.by import By
+            from webdriver_manager.chrome import ChromeDriverManager
+
+            opts = Options()
+            opts.add_argument('--headless=new')
+            opts.add_argument('--no-sandbox')
+            opts.add_argument('--disable-dev-shm-usage')
+            opts.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=opts)
+            driver.set_page_load_timeout(40)
+
+            login_url = f"https://{HOST}/patient/sso/login?country=TW&lang=zh"
+            print(f"[CareLink Auto-Login] Opening {login_url}...")
+            driver.get(login_url)
+
+            user_input = None
+            pass_input = None
+            for attempt in range(20):
+                time.sleep(1)
+                inputs = driver.find_elements(By.TAG_NAME, 'input')
+                for inp in inputs:
+                    inp_type = str(inp.get_attribute('type')).lower()
+                    inp_name = str(inp.get_attribute('name')).lower()
+                    inp_id = str(inp.get_attribute('id')).lower()
+                    if inp_type in ['text', 'email'] or 'user' in inp_name or 'user' in inp_id or inp_id == 'username':
+                        user_input = inp
+                    elif inp_type == 'password' or 'pass' in inp_name or 'pass' in inp_id or inp_id == 'password':
+                        pass_input = inp
+                if user_input and pass_input:
+                    break
+
+            if not (user_input and pass_input):
+                driver.quit()
+                return False, "無法在 CareLink 登入頁面上定位輸入框 (需要人機驗證請使用視窗模式)"
+
+            js_set_val = """
+            function setVal(input, val) {
+                const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(input, val);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('blur', { bubbles: true }));
+            }
+            setVal(arguments[0], arguments[2]);
+            setVal(arguments[1], arguments[3]);
+            """
+            driver.execute_script(js_set_val, user_input, pass_input, uname, pwd)
+            time.sleep(1)
+
+            buttons = driver.find_elements(By.TAG_NAME, 'button')
+            submit_btn = None
+            for btn in buttons:
+                btn_type = str(btn.get_attribute('type')).lower()
+                btn_text = str(btn.text).lower()
+                if btn_type == 'submit' or 'log' in btn_text or 'sign' in btn_text or '登入' in btn_text:
+                    submit_btn = btn
+                    break
+
+            if submit_btn:
+                driver.execute_script('arguments[0].click();', submit_btn)
+            else:
+                driver.execute_script('document.forms[0].submit();')
+
+            token_saved = False
+            token_data = None
+            for sec in range(30):
+                time.sleep(1)
+                cookies = driver.get_cookies()
+                cookie_dict = {c['name']: c['value'] for c in cookies}
+                curr_url = driver.current_url
+                if 'auth_tmp_token' in cookie_dict or ('patient' in curr_url and 'login' not in curr_url and len(cookie_dict) > 2):
+                    auth_token = cookie_dict.get('auth_tmp_token') or 'web_session_active'
+                    token_data = {
+                        'access_token': auth_token,
+                        'refresh_token': 'web_session_active',
+                        'scope': 'profile openid roles country',
+                        'client_id': '4fb211b8-f130-4398-b51e-28900bf68527',
+                        'client_secret': '',
+                        'mag-identifier': 'web-session',
+                        'cookies': cookie_dict
+                    }
+                    token_saved = True
+                    break
+
+            driver.quit()
+
+            if token_saved and token_data:
+                with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(token_data, f, indent=4)
+                self.token_data = token_data
+                self.load_token()
+                self.last_status = "連線成功"
+                return True, "自動登入成功，已寫入最新 Session Token！"
+            return False, f"已嘗試登入，因人機驗證 (reCAPTCHA) 請選擇 [🖥️ 開啟 Chrome 視窗登入] (URL: {curr_url})"
+        except Exception as e:
+            return False, f"Selenium 自動登入發生例外: {e}"
+
+    def set_manual_token(self, token_str):
+        if not token_str:
+            return False, "Token 不能為空"
+        
+        token_str = token_str.strip()
+        if token_str.startswith("{"):
+            try:
+                data = json.loads(token_str)
+                if "cookies" in data and "auth_tmp_token" in data["cookies"]:
+                    token_str = data["cookies"]["auth_tmp_token"]
+                elif "access_token" in data:
+                    token_str = data["access_token"]
+            except Exception:
+                pass
+
+        token_data = {
+            "access_token": token_str,
+            "refresh_token": "web_session_active",
+            "scope": "profile openid roles country",
+            "client_id": "4fb211b8-f130-4398-b51e-28900bf68527",
+            "client_secret": "",
+            "mag-identifier": "web-session",
+            "cookies": {
+                "auth_tmp_token": token_str
+            }
+        }
+        with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
+            json.dump(token_data, f, indent=4)
+        
+        self.token_data = token_data
+        self.load_token()
+        self.last_status = "連線成功 (手動更新 Token)"
+        return True, "手動更新 Token 成功！"
+
+    def auto_refresh_token(self):
+        print("[CareLink Auto-Refresh] Token 已過期，嘗試自動進行免人工登入...")
+        success, msg = self.login_with_selenium()
+        if success:
+            print(f"[CareLink Auto-Refresh Success] {msg}")
+            return True
+        else:
+            print(f"[CareLink Auto-Refresh Warning] {msg}")
+            return False
+
     def get_recent_data(self):
         if not self.load_token():
-            self.last_status = "Token Missing (Please run login script)"
+            self.last_status = "Token Missing"
             return None
 
         # 1. 自動獲取關聯患者 ID
@@ -140,37 +390,17 @@ class CareLinkClient:
                     self.last_status = "無連續血糖數據"
                     return None
             elif resp.status_code in (401, 403):
-                print("[CareLink Warning] Token expired (401/403). Attempting auto-refresh...")
+                print("[CareLink Warning] Token 到期 (401/403)，自動啟動連線續約...")
                 if self.auto_refresh_token():
                     return self.get_recent_data()
                 else:
-                    self.last_status = f"[CareLink Error] Token Expired ({resp.status_code})."
+                    self.last_status = f"Token 已過期 ({resp.status_code})，請進行登入驗證"
                     return None
             else:
-                self.last_status = f"API Error ({resp.status_code})"
+                self.last_status = f"API 伺服器錯誤 ({resp.status_code})"
                 return None
         except Exception as e:
-            self.last_status = f"Network Exception: {e}"
+            self.last_status = f"網路連線異常: {e}"
             print(f"[CareLink Exception] {e}")
 
         return None
-
-    def auto_refresh_token(self):
-        try:
-            ref_url = f"https://{HOST}/patient/sso/login?country=TW&lang=zh"
-            resp = self.session.get(ref_url, timeout=15, allow_redirects=True)
-            cookies = self.session.cookies.get_dict()
-            if "auth_tmp_token" in cookies:
-                new_token = cookies["auth_tmp_token"]
-                if "cookies" not in self.token_data:
-                    self.token_data["cookies"] = {}
-                self.token_data["cookies"]["auth_tmp_token"] = new_token
-                self.token_data["access_token"] = new_token
-                self.headers["Authorization"] = f"Bearer {new_token}"
-                with open(TOKEN_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(self.token_data, f, indent=4)
-                print("[CareLink Auto-Refresh] Successfully refreshed token!")
-                return True
-        except Exception as e:
-            print(f"[CareLink Auto-Refresh Exception] {e}")
-        return False
