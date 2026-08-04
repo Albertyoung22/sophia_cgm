@@ -175,15 +175,26 @@ class TaiwanCareLinkReceiver:
             return "⚠️ AI 助理分析時發生異常，請稍後重試。"
 
     def _load_tokens(self):
-        """讀取本機儲存的 Token 憑證檔"""
+        """讀取本機儲存的 Token 憑證檔，若不存在則嘗試從環境變數載入"""
+        tokens = {}
         if os.path.exists(TOKEN_FILE_PATH):
             try:
                 with open(TOKEN_FILE_PATH, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data
+                    tokens = json.load(f)
             except Exception as e:
                 logging.warning(f"無法讀取 Token 檔案: {e}")
-        return {}
+        
+        # 若本機檔案中無 refresh_token，嘗試從環境變數載入以利雲端部署 (Render)
+        if not tokens.get("refresh_token"):
+            env_refresh_token = os.environ.get("CARELINK_REFRESH_TOKEN")
+            if env_refresh_token:
+                logging.info("🔑 從環境變數 CARELINK_REFRESH_TOKEN 載入 Refresh Token...")
+                tokens = {
+                    "access_token": "",
+                    "refresh_token": env_refresh_token,
+                    "expires_at": 0
+                }
+        return tokens
 
     def _save_tokens(self, tokens):
         """儲存 Token 憑證至本機 JSON"""
