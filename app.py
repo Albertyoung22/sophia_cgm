@@ -1,644 +1,135 @@
-import os
-import time
-import json
-import asyncio
+# -*- coding: utf-8 -*-
+import sys
 import threading
-import warnings
-from datetime import datetime, timezone, timedelta
-import requests
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory, make_response
+import time
+import os
+from flask import Flask, jsonify, render_template
 
-import database
-from carelink_client import CareLinkClient
+# 解決 Windows 終端機 CP950 編碼無法輸出 Emoji 的問題
+if sys.platform.startswith('win'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
 
-# Suppress Matplotlib CJK Glyph warnings on Linux environments like Render
-warnings.filterwarnings("ignore", category=UserWarning)
+from carelink_receiver import TaiwanCareLinkReceiver
 
-# Matplotlib Setup for Headless Chart Generation
-import matplotlib
-matplotlib.use('Agg')
-matplotlib.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'DejaVu Sans', 'sans-serif']
-matplotlib.rcParams['axes.unicode_minus'] = False
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import numpy as np
-from scipy.interpolate import make_interp_spline
+app = Flask(__name__, template_folder='templates')
+receiver = TaiwanCareLinkReceiver()
 
-app = Flask(__name__)
-database.init_db()
+# 儲存全域最新的 CGM 資料狀態
+latest_data = {
+    "glucose": None,
+    "trend": "➡️ 平穩",
+    "time": "尚未更新",
+    "iob": 0.0,
+    "ai_advice": "等待接收數據...",
+    "is_loading": False,
+    "error": None
+}
 
-client = CareLinkClient()
+def update_latest_data(cgm):
+    global latest_data
+    if cgm:
+        latest_data["glucose"] = cgm.get("glucose")
+        latest_data["trend"] = cgm.get("trend")
+        latest_data["time"] = cgm.get("time")
+        latest_data["iob"] = cgm.get("iob")
+        latest_data["ai_advice"] = receiver.last_ai_advice or "目前無 AI 照護建議。"
+        latest_data["error"] = None
+    else:
+        latest_data["error"] = "無法從 CareLink 取得血糖數據，請確認設定或重試。"
 
-# LINE & API Secrets & Public Host
-API_SECRET = os.environ.get("API_SECRET", "tigerlion2007")
-LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "VcvnrEjM8eo/5c93V8zgGAdEe/nJChrM0ndXWIVrLwQH0qk1YDnG9FwS9rLX/UJXOAFd9iG+TuihqOLssHCJpL4vhBE3Xoan1Yq01ahcH/Qn2OsrshF8tM4yKrzGPsHpruXRC7D7Nn680dKl4STfTQdB04t89/1O/w1cDnyilFU=").strip()
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://sophia-cgm.onrender.com").rstrip("/")
-
-# Last Push Notification State Tracker
-last_push_info = {"time": datetime.min.replace(tzinfo=timezone.utc), "val": 0, "type": "normal"}
-
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
-
-def ensure_https(url):
-    if not url:
-        return url
-    if url.startswith("http://"):
-        return url.replace("http://", "https://", 1)
-    return url
-
-def get_direction_emoji(direction):
-    mapping = {
-        "DoubleUp": "⇈",
-        "SingleUp": "↑",
-        "FortyFiveUp": "↗",
-        "Flat": "→",
-        "FortyFiveDown": "↘",
-        "SingleDown": "↓",
-        "DoubleDown": "⇊",
-        "RateOutOfRange": "!!",
-        "NOT COMPUTABLE": "?",
-        "NONE": "-"
-    }
-    return mapping.get(direction, direction or "-")
-
-def send_line_message(text, image_url=None):
-    if not LINE_ACCESS_TOKEN:
-        print("[LINE Broadcast] Skip: No Token")
-        return
-    url = "https://api.line.me/v2/bot/message/broadcast"
-    headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
+def background_cgm_fetcher():
+    """背景執行緒：定期 (每 5 分鐘) 抓取 CareLink 數據"""
+    print("🚀 背景 CareLink 血糖接收服務已啟動...")
     
-    image_url = ensure_https(image_url)
-    messages = [{"type": "text", "text": text}]
-    if image_url:
-        messages.append({
-            "type": "image",
-            "originalContentUrl": image_url,
-            "previewImageUrl": image_url
-        })
-        
-    data = {"messages": messages}
-    try:
-        response = requests.post(url, headers=headers, json=data, timeout=10)
-        print(f"[LINE Broadcast] Status: {response.status_code}, Resp: {response.text}")
-    except Exception as e:
-        print(f"[LINE Broadcast Error] {e}")
+    # 第一次執行前，若無本機 tokens，先嘗試執行登入
+    if not receiver.tokens:
+        print("🔑 找不到本機憑證 Token，嘗試透過 Selenium 進行初始認證...")
+        receiver.ensure_authenticated()
 
-def reply_line_message(reply_token, text, image_url=None):
-    if not LINE_ACCESS_TOKEN:
-        print("[LINE Reply] Skip: No Token")
-        return
-    url = "https://api.line.me/v2/bot/message/reply"
-    headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}", "Content-Type": "application/json"}
-    
-    image_url = ensure_https(image_url)
-    messages = [{"type": "text", "text": text}]
-    if image_url:
-        messages.append({
-            "type": "image",
-            "originalContentUrl": image_url,
-            "previewImageUrl": image_url
-        })
-        
-    data = {
-        "replyToken": reply_token,
-        "messages": messages
-    }
-    try:
-        response = requests.post(url, headers=headers, json=data, timeout=10)
-        print(f"[LINE Reply] Status: {response.status_code}, Resp: {response.text}")
-    except Exception as e:
-        print(f"[LINE Reply Error] {e}")
-
-def generate_line_chart():
-    try:
-        entries = database.get_nightscout_entries(limit=144)
-        if not entries:
-            return False
-        
-        entries.reverse()
-        
-        times = []
-        vals = []
-        tz_tw = timezone(timedelta(hours=8))
-        for e in entries:
-            try:
-                dt = datetime.fromisoformat(e['dateString'].replace('Z', '+00:00'))
-                times.append(dt.astimezone(tz_tw))
-                vals.append(e.get('sgv', 0))
-            except Exception:
-                pass
-
-        if not times or not vals:
-            return False
-
-        BG_COLOR = '#121212'
-        GRID_COLOR = '#2A2A2A'
-        TEXT_COLOR = '#E0E0E0'
-        NORMAL_COLOR = '#00E676'
-        HIGH_COLOR = '#FF9100'
-        LOW_COLOR = '#FF5252'
-        LINE_COLOR = '#FFFFFF'
-        
-        plt.figure(figsize=(10, 5), facecolor=BG_COLOR, dpi=120)
-        ax = plt.gca()
-        ax.set_facecolor(BG_COLOR)
-        
-        plt.axhspan(70, 180, color=NORMAL_COLOR, alpha=0.03)
-        plt.axhline(y=180, color=HIGH_COLOR, linestyle='--', linewidth=1, alpha=0.3)
-        plt.axhline(y=70, color=LOW_COLOR, linestyle='--', linewidth=1, alpha=0.3)
-        
-        if len(times) > 10:
-            try:
-                x = np.array([t.timestamp() for t in times])
-                y = np.array(vals)
-                x, unique_idx = np.unique(x, return_index=True)
-                y = y[unique_idx]
-                
-                if len(x) > 3:
-                    x_new = np.linspace(x.min(), x.max(), 300)
-                    spl = make_interp_spline(x, y, k=3)
-                    y_smooth = spl(x_new)
+    while True:
+        try:
+            latest_data["is_loading"] = True
+            # 確保認證有效，必要時刷新或要求登入
+            if receiver.ensure_authenticated():
+                cgm = receiver.fetch_latest_cgm()
+                if cgm:
+                    receiver.add_to_history(cgm)
                     
-                    plt.plot([datetime.fromtimestamp(ts, tz=tz_tw) for ts in x_new], 
-                             y_smooth, color=LINE_COLOR, linewidth=2, alpha=0.7, zorder=3)
-                    plt.fill_between([datetime.fromtimestamp(ts, tz=tz_tw) for ts in x_new], 
-                                    y_smooth, 40, color=LINE_COLOR, alpha=0.05, zorder=2)
-            except Exception as e:
-                print(f"[Smooth Chart Warning] {e}")
-                plt.plot(times, vals, color=LINE_COLOR, linewidth=2, alpha=0.6, zorder=3)
-        else:
-            plt.plot(times, vals, color=LINE_COLOR, linewidth=2, alpha=0.6, zorder=3)
+                    # 偵測是否為新讀值，是的話才叫 Groq AI 進行分析
+                    last_time = receiver.history[-2].get("time") if len(receiver.history) >= 2 else None
+                    if not receiver.last_ai_advice or cgm["time"] != last_time:
+                        print("🧠 偵測到全新血糖數據，發送 Groq AI 分析請求...")
+                        receiver.last_ai_advice = receiver.analyze_with_groq(cgm['glucose'], cgm['trend'], cgm['iob'])
+                    
+                    update_latest_data(cgm)
+                else:
+                    latest_data["error"] = "未能成功取得最新血糖數據。"
+            else:
+                latest_data["error"] = "認證失效且無法自動登入，請重試。"
+        except Exception as e:
+            print(f"❌ 背景抓取過程中發生錯誤: {e}")
+            latest_data["error"] = f"背景錯誤: {str(e)}"
+        finally:
+            latest_data["is_loading"] = False
         
-        colors = []
-        for v in vals:
-            if v >= 180: colors.append(HIGH_COLOR)
-            elif v <= 70: colors.append(LOW_COLOR)
-            else: colors.append(NORMAL_COLOR)
-        
-        plt.scatter(times, vals, c=colors, s=25, edgecolors=BG_COLOR, linewidth=0.5, zorder=4)
-        
-        latest_time = times[-1]
-        latest_val = vals[-1]
-        latest_color = colors[-1]
-        
-        plt.scatter(latest_time, latest_val, color=latest_color, s=120, edgecolors='white', linewidth=2, zorder=5)
-        
-        plt.annotate(f"{latest_val}", 
-                     (latest_time, latest_val),
-                     textcoords="offset points", 
-                     xytext=(0, 15), 
-                     ha='center', 
-                     fontsize=14, 
-                     fontweight='bold', 
-                     color='white',
-                     bbox=dict(boxstyle='round,pad=0.3', fc=latest_color, alpha=0.9, ec='white', lw=1))
+        # 每 300 秒 (5 分鐘) 輪詢一次
+        time.sleep(300)
 
-        plt.ylim(40, 300 if max(vals) < 280 else max(vals) + 20)
-        ax.tick_params(colors=TEXT_COLOR, labelsize=10)
-        for spine in ax.spines.values():
-            spine.set_edgecolor(GRID_COLOR)
-        
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=tz_tw))
-        ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-        
-        plt.grid(color=GRID_COLOR, linestyle='-', linewidth=0.5, alpha=0.8)
-        
-        last_update = latest_time.strftime('%m/%d %H:%M')
-        plt.title(f"Glucose Trend ({last_update})", color=TEXT_COLOR, fontsize=12, pad=15, fontweight='bold')
-        
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        
-        output_path = os.path.join(STATIC_DIR, "line_chart.png")
-        plt.savefig(output_path, facecolor='black')
-        plt.close()
-        return True
-    except Exception as e:
-        print(f"[Generate Line Chart Error] {e}")
-        return False
-
-def generate_summary_chart(hours=24):
-    try:
-        entries = database.get_nightscout_entries(limit=288)
-        if not entries:
-            return False
-        
-        entries.reverse()
-        tz_tw = timezone(timedelta(hours=8))
-        times = []
-        vals = []
-        for e in entries:
-            try:
-                dt = datetime.fromisoformat(e['dateString'].replace('Z', '+00:00'))
-                times.append(dt.astimezone(tz_tw))
-                vals.append(e.get('sgv', 0))
-            except Exception:
-                pass
-
-        if not times or not vals:
-            return False
-        
-        plt.figure(figsize=(10, 5), facecolor='black')
-        ax = plt.gca()
-        ax.set_facecolor('black')
-        
-        plt.axhspan(70, 180, color='#32D74B', alpha=0.1, label='Target Range')
-        plt.plot(times, vals, color='#555555', linewidth=1.5, alpha=0.6)
-        
-        colors = []
-        for v in vals:
-            if v >= 180: colors.append('#FF9F0A')
-            elif v <= 70: colors.append('#FF453A')
-            else: colors.append('#00BFFF')
-            
-        plt.scatter(times, vals, c=colors, s=15, zorder=3)
-        
-        plt.ylim(40, 350)
-        ax.tick_params(colors='gray', labelsize=9)
-        for spine in ax.spines.values(): spine.set_color('#333333')
-        
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=tz_tw))
-        plt.grid(color='#222222', linestyle='--', linewidth=0.5)
-        
-        plt.title(f"Past {hours} Hours Trend", color='white', pad=20, fontsize=12)
-        plt.tight_layout()
-        
-        output_path = os.path.join(STATIC_DIR, "summary_chart.png")
-        plt.savefig(output_path, facecolor='black')
-        plt.close()
-        return True
-    except Exception as e:
-        print(f"[Generate Summary Chart Error] {e}")
-        return False
-
-@app.after_request
-def add_no_cache_headers(response):
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+# 啟動背景執行緒
+fetcher_thread = threading.Thread(target=background_cgm_fetcher, daemon=True)
+fetcher_thread.start()
 
 @app.route('/')
 def index():
+    """渲染主儀表板畫面"""
     return render_template('index.html')
 
-@app.route('/api/v1/entries', methods=['GET'])
-@app.route('/api/v1/entries.json', methods=['GET', 'POST'])
-def get_entries():
-    if request.method == 'POST':
-        data = request.get_json(silent=True) or {}
-        items = [data] if isinstance(data, dict) else data
-        for entry in items:
-            val = entry.get('sgv') or entry.get('mbg') or entry.get('glucose')
-            if val:
-                database.save_entry(
-                    sgv=int(val),
-                    direction=entry.get('direction', 'Flat'),
-                    date_string=entry.get('dateString', datetime.now(timezone(timedelta(hours=8))).isoformat()),
-                    timestamp=entry.get('date', int(time.time() * 1000)),
-                    device=entry.get('device', 'App')
-                )
-        return jsonify({"status": "success"}), 200
-
-    if 'count' in request.args or (request.headers.get('Accept') == 'application/json' and not request.args.get('dashboard')):
-        count = request.args.get('count', default=10, type=int)
-        ns_entries = database.get_nightscout_entries(count)
-        return jsonify(ns_entries)
-        
-    latest = database.get_latest_entry()
-    history = database.get_recent_entries(288)
-    stats = database.get_daily_stats(24)
+@app.route('/api/cgm')
+def get_cgm():
+    """取得當前血糖資訊與歷史數據的 API"""
     return jsonify({
-        "status": "success",
-        "latest": latest,
-        "history": history,
-        "stats": stats
+        "glucose": latest_data["glucose"],
+        "trend": latest_data["trend"],
+        "time": latest_data["time"],
+        "iob": latest_data["iob"],
+        "ai_advice": latest_data["ai_advice"],
+        "is_loading": latest_data["is_loading"],
+        "error": latest_data["error"],
+        "history": receiver.history
     })
 
-@app.route('/api/v1/login', methods=['POST'])
-def trigger_login():
-    req_data = request.get_json(silent=True) or {}
-    username = req_data.get('username') or client.username
-    password = req_data.get('password') or client.password
-    mode = req_data.get('mode', 'window')
+@app.route('/api/force_refresh', methods=['POST'])
+def force_refresh():
+    """強制手動重整數據的 API"""
+    global latest_data
+    if latest_data["is_loading"]:
+        return jsonify({"status": "error", "message": "系統正在抓取數據中，請稍後..."}), 400
     
-    if mode == 'window':
-        success, msg = client.login_with_chrome_window(username, password)
-    else:
-        success, msg = client.login_with_selenium(username, password)
+    def run_manual_refresh():
+        try:
+            latest_data["is_loading"] = True
+            receiver.ensure_authenticated()
+            cgm = receiver.fetch_latest_cgm()
+            if cgm:
+                receiver.add_to_history(cgm)
+                # 手動強制重新產生 AI 分析
+                print("🧠 手動強制觸發 Groq AI 分析...")
+                receiver.last_ai_advice = receiver.analyze_with_groq(cgm['glucose'], cgm['trend'], cgm['iob'])
+                update_latest_data(cgm)
+            else:
+                latest_data["error"] = "手動抓取血糖數據失敗。"
+        except Exception as e:
+            latest_data["error"] = f"手動重整錯誤: {str(e)}"
+        finally:
+            latest_data["is_loading"] = False
 
-    if success:
-        c_data = client.get_recent_data()
-        if c_data:
-            database.save_entry(
-                sgv=c_data['sgv'],
-                direction=c_data['direction'],
-                date_string=c_data['dateString'],
-                timestamp=c_data['date'],
-                device=c_data['device']
-            )
-            generate_line_chart()
-        return jsonify({"status": "success", "message": msg, "data": c_data})
-    else:
-        return jsonify({"status": "error", "message": msg}), 400
-
-@app.route('/api/v1/token', methods=['POST'])
-def update_token():
-    req_data = request.get_json(silent=True) or {}
-    token_str = req_data.get('token') or req_data.get('access_token') or ""
-    
-    success, msg = client.set_manual_token(token_str)
-    if success:
-        c_data = client.get_recent_data()
-        if c_data:
-            database.save_entry(
-                sgv=c_data['sgv'],
-                direction=c_data['direction'],
-                date_string=c_data['dateString'],
-                timestamp=c_data['date'],
-                device=c_data['device']
-            )
-            generate_line_chart()
-        return jsonify({"status": "success", "message": msg, "data": c_data})
-    else:
-        return jsonify({"status": "error", "message": msg}), 400
-
-@app.route('/api/v1/sync', methods=['POST', 'GET'])
-def trigger_sync():
-    data = client.get_recent_data()
-    if data:
-        saved = database.save_entry(
-            sgv=data['sgv'],
-            direction=data['direction'],
-            date_string=data['dateString'],
-            timestamp=data['date'],
-            device=data['device']
-        )
-        generate_line_chart()
-        return jsonify({"status": "success", "data": data, "saved": saved})
-    else:
-        print("[Manual Sync] Token 到期或擷取失敗，嘗試啟動自動續約...")
-        ok, msg = client.login_with_selenium()
-        if ok:
-            data = client.get_recent_data()
-            if data:
-                saved = database.save_entry(
-                    sgv=data['sgv'],
-                    direction=data['direction'],
-                    date_string=data['dateString'],
-                    timestamp=data['date'],
-                    device=data['device']
-                )
-                generate_line_chart()
-                return jsonify({"status": "success", "data": data, "saved": saved, "message": "自動登入與數據同步成功"})
-
-    return jsonify({
-        "status": "warning",
-        "message": client.last_status or "CareLink 伺服器尚未回應或 Token 需更新"
-    })
-
-@app.route('/api/v1/status', methods=['GET'])
-@app.route('/api/v1/status.json', methods=['GET'])
-def get_status():
-    now = datetime.now(timezone.utc)
-    return jsonify({
-        "status": "ok",
-        "name": "SophiaCarelink",
-        "version": "1.0.0",
-        "account": client.username,
-        "country": client.country,
-        "last_status": client.last_status,
-        "last_glucose": client.last_glucose,
-        "last_fetch_time": client.last_fetch_time.isoformat() if client.last_fetch_time else None,
-        "has_token": bool(client.token_data),
-        "serverTime": now.strftime('%Y-%m-%dT%H:%M:%S.000Z'),
-        "serverTimeEpoch": int(now.timestamp() * 1000),
-        "authorized": True,
-        "apiEnabled": True,
-        "settings": {
-            "units": "mg/dL",
-            "timeFormat": 24,
-            "thresholds": {"bgHigh": 260, "bgTargetTop": 180, "bgTargetBottom": 80, "bgLow": 55},
-            "enable": ["careportal", "rawbg", "iob"]
-        }
-    })
-
-@app.route('/api/v1/verifyauth', methods=['GET'])
-def verify_auth():
-    return jsonify({
-        "status": 200,
-        "message": {"canRead": True, "canWrite": True, "isAdmin": True, "message": "OK", "rolefound": "FOUND", "permissions": "ROLE"}
-    })
-
-@app.route('/api/v1/daily_report', methods=['GET'])
-def trigger_daily_report():
-    token = request.args.get('token')
-    if token != API_SECRET:
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    stats = database.get_daily_stats(24)
-    if stats:
-        chart_url = None
-        if generate_summary_chart(24):
-            now_ts = int(time.time())
-            chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
-        
-        msg = (
-            f"📊 【每日血糖自動結算】\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
-            f"🔹 TIR (範圍內): {stats['tir']}%\n"
-            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
-            f"🔹 偏高比例: {stats['high']}%\n"
-            f"🔹 偏低比例: {stats['low']}%\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"過去 24 小時共記錄 {stats['count']} 次數據。"
-        )
-        send_line_message(msg, chart_url)
-        return jsonify({"status": "success", "stats": stats})
-    return jsonify({"status": "no_data"}), 200
-
-# LINE Webhook (回復與 SophisCGM 100% 一致的同步執行邏輯)
-@app.route("/callback", methods=['POST'])
-def line_callback():
-    body = request.get_json(silent=True) or {}
-    print(f"[LINE Webhook Body] Received: {json.dumps(body)}")
-    try:
-        for event in body.get('events', []):
-            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
-                user_msg = event['message']['text'].strip()
-                reply_token = event['replyToken']
-                print(f"[LINE Message] User typed: {user_msg}")
-                
-                if user_msg == "血糖" or user_msg.lower() == "bg":
-                    latest = database.get_latest_entry()
-                    if latest:
-                        try:
-                            dt_in = datetime.fromisoformat(latest['dateString'].replace('Z', '+00:00'))
-                            local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
-                        except Exception:
-                            local_time = latest['dateString']
-                        
-                        chart_url = None
-                        if generate_line_chart():
-                            now_ts = int(time.time())
-                            chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
-                            
-                        dir_emoji = get_direction_emoji(latest.get('direction'))
-                        msg = f"【即時查詢】\n🩸 數值: {latest['sgv']}\n📈 趨勢: {dir_emoji} ({latest.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
-                        reply_line_message(reply_token, msg, chart_url)
-                        print(f"✅ 已回覆即時數據: {latest['sgv']} at {local_time}")
-                    else:
-                        reply_line_message(reply_token, "資料庫目前沒有任何血糖紀錄。")
-
-                elif user_msg in ["同步", "sync", "連線", "login", "登入"]:
-                    data = client.get_recent_data()
-                    if not data:
-                        client.login_with_selenium()
-                        data = client.get_recent_data()
-
-                    if data:
-                        database.save_entry(
-                            sgv=data['sgv'],
-                            direction=data['direction'],
-                            date_string=data['dateString'],
-                            timestamp=data['date'],
-                            device=data['device']
-                        )
-                        generate_line_chart()
-                        dt_in = datetime.fromisoformat(data['dateString'].replace('Z', '+00:00'))
-                        local_time = dt_in.astimezone(timezone(timedelta(hours=8))).strftime('%H:%M')
-                        dir_emoji = get_direction_emoji(data['direction'])
-                        msg = f"【同步完成】\n🩸 最新血糖: {data['sgv']} mg/dL\n📈 趨勢: {dir_emoji} ({data['direction']})\n⏰ 時間: {local_time}"
-                        reply_line_message(reply_token, msg)
-                    else:
-                        reply_line_message(reply_token, f"同步失敗: {client.last_status}")
-
-                elif user_msg in ["報表", "報告", "report"]:
-                    stats = database.get_daily_stats(24)
-                    if stats:
-                        chart_url = None
-                        if generate_summary_chart(24):
-                            now_ts = int(time.time())
-                            chart_url = f"{PUBLIC_URL}/static/summary_chart.png?t={now_ts}"
-                        
-                        msg = (
-                            f"📊 【過去 24 小時報表】\n"
-                            f"━━━━━━━━━━━━━━━\n"
-                            f"🔹 平均血糖: {stats['avg']} mg/dL\n"
-                            f"🔹 TIR (範圍內): {stats['tir']}%\n"
-                            f"🔹 預估 A1C (GMI): {stats['gmi']}%\n"
-                            f"🔹 偏高比例: {stats['high']}%\n"
-                            f"🔹 偏低比例: {stats['low']}%\n"
-                            f"━━━━━━━━━━━━━━━\n"
-                            f"共分析 {stats['count']} 筆數據"
-                        )
-                        reply_line_message(reply_token, msg, chart_url)
-                        print(f"✅ 已回覆 24H 報表: Avg {stats['avg']}")
-                    else:
-                        reply_line_message(reply_token, "暫時無法產生報表，請確認是否有過去 24 小時的資料。")
-    except Exception as e:
-        print(f"[LINE Callback Exception] {e}")
-    return 'OK', 200
-
-@app.route('/api/v1/tts')
-def get_tts():
-    text = request.args.get('text', '血糖正常')
-    voice = "zh-TW-HsiaoChenNeural"
-    output_path = os.path.join(STATIC_DIR, "voice.mp3")
-    
-    async def amain():
-        import edge_tts
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(output_path)
-    
-    try:
-        asyncio.run(amain())
-        return send_file(output_path, mimetype="audio/mpeg")
-    except Exception as e:
-        print(f"[TTS Error] {e}")
-        return jsonify({"error": str(e)}), 500
-
-def check_and_push_alerts(data):
-    global last_push_info
-    if not data:
-        return
-    
-    val = data.get('sgv')
-    if not val:
-        return
-
-    now = datetime.now(timezone.utc)
-    if val < 80:
-        current_state = "low"
-    elif val > 180:
-        current_state = "high"
-    else:
-        current_state = "normal"
-        
-    last_state = last_push_info.get("type", "normal")
-    minutes_since_last = (now - last_push_info["time"]).total_seconds() / 60
-    is_urgent = current_state in ["low", "high"]
-    
-    should_push = False
-    reason = ""
-    
-    if current_state != last_state:
-        should_push = True
-        reason = f"State transition from {last_state} to {current_state}"
-    elif is_urgent and minutes_since_last >= 60:
-        should_push = True
-        reason = f"Persistent {current_state} state alert"
-
-    if should_push:
-        local_now = datetime.now(timezone(timedelta(hours=8)))
-        local_time = local_now.strftime('%H:%M')
-        
-        chart_url = None
-        if is_urgent:
-            if generate_line_chart():
-                now_ts = int(now.timestamp())
-                chart_url = f"{PUBLIC_URL}/static/line_chart.png?t={now_ts}"
-
-        dir_emoji = get_direction_emoji(data.get('direction'))
-        msg = f"【{'🚨 警告' if is_urgent else '📊 目前血糖'}】\n🩸 數值: {val} mg/dL\n📈 趨勢: {dir_emoji} ({data.get('direction', 'Flat')})\n⏰ 時間: {local_time}"
-        send_line_message(msg, chart_url)
-        
-        last_push_info = {"time": now, "val": val, "type": current_state}
-        print(f"[LINE Alert] {reason} broadcast: {val} at {local_time}")
-
-def start_background_loop():
-    def loop():
-        print("[SophiaCarelink Thread] 美敦力 CareLink 自動背景同步與 LINE 警報任務已啟動 (每 5 分鐘自動執行)...")
-        while True:
-            try:
-                data = client.get_recent_data()
-                if data:
-                    saved = database.save_entry(
-                        sgv=data['sgv'],
-                        direction=data['direction'],
-                        date_string=data['dateString'],
-                        timestamp=data['date'],
-                        device=data['device']
-                    )
-                    generate_line_chart()
-                    if saved:
-                        check_and_push_alerts(data)
-            except Exception as e:
-                print(f"[Background Loop Exception] {e}")
-            time.sleep(300)
-
-    t = threading.Thread(target=loop, daemon=True)
-    t.start()
-
-# 啟動背景任務
-start_background_loop()
+    threading.Thread(target=run_manual_refresh).start()
+    return jsonify({"status": "success", "message": "手動更新已觸發，請於幾秒後重新整理儀表板。"})
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    print(f"SophiaCarelink All-in-One Python Service Starting: http://localhost:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # 關閉 Flask debug 模式以防啟動雙執行緒
+    app.run(host='127.0.0.1', port=5000, debug=False)
