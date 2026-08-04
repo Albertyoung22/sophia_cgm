@@ -1,10 +1,6 @@
-flask
+Flask
 requests
-matplotlib
-numpy
-scipy
-edge-tts
+openai
 gunicorn
-psycopg2-binary
-pymongo
-
+selenium
+webdriver-manager
