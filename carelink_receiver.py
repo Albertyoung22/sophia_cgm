@@ -89,6 +89,7 @@ class TaiwanCareLinkReceiver:
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
         })
         
+        self.mongo_uri = env.get("MONGO_URI") or env.get("MONGO_CONNECTION")
         self.tokens = self._load_tokens()
         
         self.groq_client = OpenAI(
@@ -174,8 +175,37 @@ class TaiwanCareLinkReceiver:
             logging.error(f"Groq AI 分析異常: {e}")
             return "⚠️ AI 助理分析時發生異常，請稍後重試。"
 
+    def _get_mongo_client(self):
+        if not self.mongo_uri:
+            return None
+        try:
+            from pymongo import MongoClient
+            client = MongoClient(self.mongo_uri)
+            try:
+                db = client.get_default_database()
+            except Exception:
+                db = None
+            if db is None:
+                db = client["nightscout"]
+            return db
+        except Exception as e:
+            logging.error(f"MongoDB連線錯誤: {e}")
+            return None
+
     def _load_tokens(self):
-        """讀取本機儲存的 Token 憑證檔，若不存在則嘗試從環境變數載入"""
+        """讀取儲存的 Token 憑證（優先從 MongoDB 讀取，其次本機 JSON 檔，最後環境變數）"""
+        # 1. 嘗試從 MongoDB 載入
+        db = self._get_mongo_client()
+        if db is not None:
+            try:
+                doc = db.carelink_tokens.find_one({"key": "carelink_credentials"})
+                if doc and doc.get("tokens") and doc["tokens"].get("refresh_token"):
+                    logging.info("🔑 成功從 MongoDB 載入 CareLink 憑證。")
+                    return doc["tokens"]
+            except Exception as e:
+                logging.warning(f"從 MongoDB 載入憑證失敗: {e}")
+
+        # 2. 嘗試從本機檔案載入
         tokens = {}
         if os.path.exists(TOKEN_FILE_PATH):
             try:
@@ -184,7 +214,7 @@ class TaiwanCareLinkReceiver:
             except Exception as e:
                 logging.warning(f"無法讀取 Token 檔案: {e}")
         
-        # 若本機檔案中無 refresh_token，嘗試從環境變數載入以利雲端部署 (Render)
+        # 3. 嘗試從環境變數載入以利初始設定 (Render)
         if not tokens.get("refresh_token"):
             env_refresh_token = os.environ.get("CARELINK_REFRESH_TOKEN")
             if env_refresh_token:
@@ -197,14 +227,29 @@ class TaiwanCareLinkReceiver:
         return tokens
 
     def _save_tokens(self, tokens):
-        """儲存 Token 憑證至本機 JSON"""
+        """儲存 Token 憑證（同步寫入 MongoDB 與本機 JSON 檔）"""
+        self.tokens = tokens
+        
+        # 1. 嘗試同步到 MongoDB
+        db = self._get_mongo_client()
+        if db is not None:
+            try:
+                db.carelink_tokens.replace_one(
+                    {"key": "carelink_credentials"},
+                    {"key": "carelink_credentials", "tokens": tokens, "updated_at": time.time()},
+                    upsert=True
+                )
+                logging.info("💾 CareLink 憑證已同步儲存至 MongoDB。")
+            except Exception as e:
+                logging.error(f"儲存憑證至 MongoDB 失敗: {e}")
+
+        # 2. 儲存至本地檔案
         try:
-            self.tokens = tokens
             with open(TOKEN_FILE_PATH, 'w', encoding='utf-8') as f:
                 json.dump(tokens, f, ensure_ascii=False, indent=2)
-            logging.info("💾 CareLink 認證 Token 已成功儲存至本機。")
+            logging.info("💾 CareLink 憑證已儲存至本機檔案。")
         except Exception as e:
-            logging.error(f"儲存 Token 失敗: {e}")
+            logging.error(f"儲存憑證至本機檔案失敗: {e}")
 
     def is_authenticated(self):
         """檢查目前的 Access Token 是否存在且未過期"""
