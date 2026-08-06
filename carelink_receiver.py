@@ -91,6 +91,8 @@ class TaiwanCareLinkReceiver:
         
         self.mongo_uri = env.get("MONGO_URI") or env.get("MONGO_CONNECTION")
         self.tokens = self._load_tokens()
+        if self.tokens:
+            self._save_tokens(self.tokens)
         
         self.groq_client = OpenAI(
             api_key=self.groq_api_key,
