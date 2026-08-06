@@ -77,10 +77,10 @@ class TaiwanCareLinkReceiver:
 
     def __init__(self, username=None, password=None, country_code="tw"):
         env = load_env()
-        self.username = username or env.get("CARELINK_USERNAME", "Sophiafa")
-        self.password = password or env.get("CARELINK_PASSWORD", "20151120")
-        self.country = (country_code or env.get("CARELINK_COUNTRY", "tw")).lower()
-        self.groq_api_key = env.get("GROQ_API_KEY")
+        self.username = username or env.get("CARELINK_USERNAME") or os.environ.get("CARELINK_USERNAME") or "Sophiafa"
+        self.password = password or env.get("CARELINK_PASSWORD") or os.environ.get("CARELINK_PASSWORD") or "20151120"
+        self.country = (country_code or env.get("CARELINK_COUNTRY") or os.environ.get("CARELINK_COUNTRY") or "tw").lower()
+        self.groq_api_key = env.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 
         self.session = requests.Session()
         self.session.headers.update({
