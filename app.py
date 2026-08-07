@@ -44,25 +44,37 @@ last_push_info = {
     "state": "normal"
 }
 
-def send_line_message(text):
+def send_line_message(text, image_url=None):
     if not LINE_ACCESS_TOKEN:
         print("[LINE] 跳過: 未設定 LINE_ACCESS_TOKEN")
         return
     url = "https://api.line.me/v2/bot/message/broadcast"
     headers = {
-        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN.strip()}",
         "Content-Type": "application/json"
     }
+    messages = [{"type": "text", "text": text}]
+    if image_url:
+        messages.append({
+            "type": "image",
+            "originalContentUrl": image_url,
+            "previewImageUrl": image_url
+        })
     data = {
-        "messages": [
-            {"type": "text", "text": text}
-        ]
+        "messages": messages
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
-        print(f"[LINE] 推播狀態碼: {response.status_code}")
+        print(f"[LINE Broadcast] 推播狀態碼: {response.status_code}")
+        if response.status_code != 200:
+            print(f"❌ [LINE Broadcast 錯誤詳細內容]: {response.text}")
+            if image_url and response.status_code == 400:
+                print("🔄 圖片存取失敗，降級為僅廣播純文字訊息...")
+                data["messages"] = [{"type": "text", "text": text}]
+                res_retry = requests.post(url, headers=headers, json=data, timeout=10)
+                print(f"[LINE Broadcast 降級狀態碼]: {res_retry.status_code}")
     except Exception as e:
-        print(f"[LINE] 傳送錯誤: {e}")
+        print(f"[LINE Broadcast 傳送例外]: {e}")
 
 def get_daily_stats(hours=24):
     try:
@@ -333,6 +345,11 @@ def check_and_send_line_alert(cgm, ai_advice):
         else:
             title = "📊 血糖恢復正常"
             
+        chart_url = None
+        if generate_line_chart():
+            now_ts = int(now.timestamp())
+            chart_url = f"{BASE_URL}/static/line_chart.png?t={now_ts}"
+
         msg = (
             f"【{title}】\n"
             f"🩸 血糖數值: {glucose} mg/dL\n"
@@ -343,7 +360,7 @@ def check_and_send_line_alert(cgm, ai_advice):
             f"{ai_advice}"
         )
         
-        send_line_message(msg)
+        send_line_message(msg, chart_url)
         last_push_info = {"time": now, "state": current_state}
         print(f"✅ LINE 通知已發送 ({reason}) | 血糖: {glucose}")
 
@@ -454,10 +471,11 @@ def force_refresh():
 # ---------------------------------------------------------
 def reply_line_message(reply_token, text, image_url=None):
     if not LINE_ACCESS_TOKEN:
+        print("[LINE] 跳過: 未設定 LINE_ACCESS_TOKEN")
         return
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
-        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN.strip()}",
         "Content-Type": "application/json"
     }
     messages = [{"type": "text", "text": text}]
@@ -474,21 +492,29 @@ def reply_line_message(reply_token, text, image_url=None):
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
         print(f"[LINE Reply] 回覆狀態碼: {response.status_code}")
+        if response.status_code != 200:
+            print(f"❌ [LINE Reply 錯誤詳細內容]: {response.text}")
+            # 若包含圖片被拒絕 (HTTP 400)，降級為僅發送純文字訊息
+            if image_url and response.status_code == 400:
+                print("🔄 圖片網址驗證失敗，降級為僅發送純文字訊息...")
+                data["messages"] = [{"type": "text", "text": text}]
+                res_retry = requests.post(url, headers=headers, json=data, timeout=10)
+                print(f"[LINE Reply 降級狀態碼]: {res_retry.status_code}")
     except Exception as e:
-        print(f"[LINE Reply Error] {e}")
+        print(f"[LINE Reply 傳送例外]: {e}")
 
 @app.route("/callback", methods=['POST'])
 def line_callback():
-    body = request.get_json()
+    body = request.get_json() or {}
     print(f"[Webhook] Received: {json.dumps(body)}")
     try:
         for event in body.get('events', []):
-            if event['type'] == 'message' and event['message']['type'] == 'text':
+            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
                 user_msg = event['message']['text'].strip()
-                reply_token = event['replyToken']
+                reply_token = event.get('replyToken')
                 print(f"[Message] User: {user_msg}")
                 
-                if user_msg == "血糖" or user_msg.lower() == "bg":
+                if "血糖" in user_msg or user_msg.lower() in ["bg", "cgm", "blood glucose"]:
                     if receiver.history:
                         entry = receiver.history[-1]
                         try:
@@ -517,7 +543,7 @@ def line_callback():
                     else:
                         reply_line_message(reply_token, "目前歷史紀錄中沒有任何血糖數據。")
                         
-                elif user_msg in ["報表", "報告", "report"]:
+                elif any(k in user_msg for k in ["報表", "報告", "report", "統計"]):
                     stats = get_daily_stats(24)
                     if stats:
                         chart_url = None
