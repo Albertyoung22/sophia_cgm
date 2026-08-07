@@ -92,7 +92,7 @@ class TaiwanCareLinkReceiver:
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
         })
         
-        self.mongo_uri = env.get("MONGO_URI") or env.get("MONGO_CONNECTION")
+        self.mongo_uri = env.get("MONGO_URI") or env.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or os.environ.get("MONGO_CONNECTION")
         self.tokens = self._load_tokens()
         if self.tokens:
             self._save_tokens(self.tokens)
