@@ -123,7 +123,17 @@ class TaiwanCareLinkReceiver:
         self.last_ai_advice = ""
 
     def _load_history(self):
-        """載入歷史血糖記錄"""
+        """載入歷史血糖記錄（優先從 MongoDB 載入，其次本機 JSON 檔）"""
+        db = self._get_mongo_client()
+        if db is not None:
+            try:
+                doc = db.carelink_history.find_one({"key": "glucose_history"})
+                if doc and isinstance(doc.get("history"), list) and len(doc["history"]) > 0:
+                    logging.info("📊 成功從 MongoDB 載入歷史血糖紀錄。")
+                    return doc["history"]
+            except Exception as e:
+                logging.warning(f"從 MongoDB 載入歷史數據失敗: {e}")
+
         if os.path.exists(self.history_file):
             try:
                 with open(self.history_file, 'r', encoding='utf-8') as f:
@@ -133,7 +143,18 @@ class TaiwanCareLinkReceiver:
         return []
 
     def _save_history(self):
-        """儲存歷史血糖記錄"""
+        """儲存歷史血糖記錄（同步寫入 MongoDB 與本機 JSON 檔）"""
+        db = self._get_mongo_client()
+        if db is not None:
+            try:
+                db.carelink_history.replace_one(
+                    {"key": "glucose_history"},
+                    {"key": "glucose_history", "history": self.history, "updated_at": time.time()},
+                    upsert=True
+                )
+            except Exception as e:
+                logging.error(f"儲存歷史數據至 MongoDB 失敗: {e}")
+
         try:
             with open(self.history_file, 'w', encoding='utf-8') as f:
                 json.dump(self.history, f, ensure_ascii=False, indent=2)
