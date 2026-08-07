@@ -186,8 +186,8 @@ class TaiwanCareLinkReceiver:
         self._save_history()
 
     def analyze_with_groq(self, glucose, trend, iob):
-        """使用 Groq AI 對當前血糖數據進行分析並提供叮嚀"""
-        if not self.groq_client:
+        """使用 Groq REST API 對當前血糖數據進行分析並提供叮嚀"""
+        if not self.groq_api_key:
             return "⚠️ 未設定 GROQ_API_KEY，無法使用 AI 分析助理。"
 
         prompt = f"""
@@ -202,30 +202,41 @@ class TaiwanCareLinkReceiver:
 2. 內容要簡潔、實用、語氣溫和，控制在 2-3 句話以內。
 3. 如果血糖偏低 (<70 mg/dL) 或偏高 (>250 mg/dL)，請明確給予警示與具體應對建議。
 """
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self.groq_api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        }
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 150,
+            "temperature": 0.7
+        }
+
         try:
-            response = self.groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=150,
-                temperature=0.7
-            )
-            ai_advice = response.choices[0].message.content.strip()
-            return ai_advice
+            res = self.session.post(url, headers=headers, json=payload, timeout=12)
+            if res.status_code == 200:
+                data = res.json()
+                ai_advice = data['choices'][0]['message']['content'].strip()
+                return ai_advice
+            else:
+                logging.error(f"Groq API 回應非 200 (HTTP {res.status_code}): {res.text}")
         except Exception as e:
-            logging.error(f"Groq AI 分析異常: {e}")
-            # 智慧降級備援叮嚀：即便 AI 連線異常，仍依據真實血糖數值提供安全的照護提醒
-            if glucose is not None:
-                if glucose < 70:
-                    return f"🚨【低血糖提醒】目前血糖數值偏低 ({glucose} mg/dL)，請立即補充 15 克快速作用糖分（如果汁、方糖），並於 15 分鐘後重新測量。"
-                elif glucose > 250:
-                    return f"⚠️【高血糖警示】目前血糖數值偏高 ({glucose} mg/dL)，請補充水分並評估追加胰島素 (IOB: {iob} U)。"
-                elif glucose > 180:
-                    return f"↗️【血糖偏高提醒】目前血糖數值高於目標範圍 ({glucose} mg/dL)，請留意飲食與適當追加劑量。"
-                else:
-                    return f"💚【血糖穩定】目前血糖數值在目標範圍內 ({glucose} mg/dL)，請繼續保持良好的飲食與規律作息。"
-            return "⚠️ AI 助理分析連線異常，請稍後重試。"
+            logging.error(f"Groq API 連線異常: {e}")
+
+        # 智慧降級備援叮嚀：即便 API 連線異常，仍依據真實血糖數值提供安全的照護提醒
+        if glucose is not None:
+            if glucose < 70:
+                return f"🚨【低血糖提醒】目前血糖數值偏低 ({glucose} mg/dL)，請立即補充 15 克快速作用糖分（如果汁、方糖），並於 15 分鐘後重新測量。"
+            elif glucose > 250:
+                return f"⚠️【高血糖警示】目前血糖數值偏高 ({glucose} mg/dL)，請補充水分並評估追加胰島素 (IOB: {iob} U)。"
+            elif glucose > 180:
+                return f"↗️【血糖偏高提醒】目前血糖數值高於目標範圍 ({glucose} mg/dL)，請留意飲食與適度追加劑量。"
+            else:
+                return f"💚【血糖穩定】目前血糖數值在目標範圍內 ({glucose} mg/dL)，請繼續保持良好的飲食與規律作息。"
+        return "⚠️ AI 助理分析連線異常，請稍後重試。"
 
     def _get_mongo_client(self):
         if not self.mongo_uri:
