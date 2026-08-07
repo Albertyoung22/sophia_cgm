@@ -99,7 +99,9 @@ class TaiwanCareLinkReceiver:
         
         self.groq_client = OpenAI(
             api_key=self.groq_api_key,
-            base_url="https://api.groq.com/openai/v1"
+            base_url="https://api.groq.com/openai/v1",
+            timeout=10.0,
+            max_retries=2
         ) if (self.groq_api_key and OpenAI is not None) else None
         
         self.history_file = os.path.join(BASE_DIR, '.carelink_history.json')
@@ -178,7 +180,17 @@ class TaiwanCareLinkReceiver:
             return ai_advice
         except Exception as e:
             logging.error(f"Groq AI 分析異常: {e}")
-            return "⚠️ AI 助理分析時發生異常，請稍後重試。"
+            # 智慧降級備援叮嚀：即便 AI 連線異常，仍依據真實血糖數值提供安全的照護提醒
+            if glucose is not None:
+                if glucose < 70:
+                    return f"🚨【低血糖提醒】目前血糖數值偏低 ({glucose} mg/dL)，請立即補充 15 克快速作用糖分（如果汁、方糖），並於 15 分鐘後重新測量。"
+                elif glucose > 250:
+                    return f"⚠️【高血糖警示】目前血糖數值偏高 ({glucose} mg/dL)，請補充水分並評估追加胰島素 (IOB: {iob} U)。"
+                elif glucose > 180:
+                    return f"↗️【血糖偏高提醒】目前血糖數值高於目標範圍 ({glucose} mg/dL)，請留意飲食與適當追加劑量。"
+                else:
+                    return f"💚【血糖穩定】目前血糖數值在目標範圍內 ({glucose} mg/dL)，請繼續保持良好的飲食與規律作息。"
+            return "⚠️ AI 助理分析連線異常，請稍後重試。"
 
     def _get_mongo_client(self):
         if not self.mongo_uri:
