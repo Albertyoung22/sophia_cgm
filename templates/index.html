@@ -784,8 +784,12 @@
                     if (data.time) {
                         try {
                             const dt = new Date(data.time);
-                            const formattedTime = dt.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-                            document.getElementById('update-time').innerText = `資料時間: ${formattedTime}`;
+                            if (!isNaN(dt.getTime())) {
+                                const formattedTime = dt.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                                document.getElementById('update-time').innerText = `資料時間: ${formattedTime}`;
+                            } else {
+                                document.getElementById('update-time').innerText = `資料時間: ${data.time}`;
+                            }
                         } catch (e) {
                             document.getElementById('update-time').innerText = `資料時間: ${data.time}`;
                         }

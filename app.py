@@ -25,11 +25,11 @@ receiver = TaiwanCareLinkReceiver()
 
 # 儲存全域最新的 CGM 資料狀態
 latest_data = {
-    "glucose": None,
-    "trend": "➡️ 平穩",
-    "time": "尚未更新",
-    "iob": 0.0,
-    "ai_advice": "等待接收數據...",
+    "glucose": receiver.history[-1].get("glucose") if receiver.history else None,
+    "trend": receiver.history[-1].get("trend", "➡️ 平穩") if receiver.history else "➡️ 平穩",
+    "time": receiver.history[-1].get("time", "尚未更新") if receiver.history else "尚未更新",
+    "iob": receiver.history[-1].get("iob", 0.0) if receiver.history else 0.0,
+    "ai_advice": receiver.last_ai_advice or "等待接收數據...",
     "is_loading": False,
     "error": None
 }
@@ -376,6 +376,7 @@ def background_cgm_fetcher():
                 cgm = receiver.fetch_latest_cgm()
                 if cgm:
                     receiver.add_to_history(cgm)
+                    update_latest_data(cgm)
                     
                     # 偵測是否為新讀值，是的話才叫 Groq AI 進行分析
                     last_time = receiver.history[-2].get("time") if len(receiver.history) >= 2 else None
@@ -384,8 +385,6 @@ def background_cgm_fetcher():
                         receiver.last_ai_advice = receiver.analyze_with_groq(cgm['glucose'], cgm['trend'], cgm['iob'])
                         update_latest_data(cgm)
                         check_and_send_line_alert(cgm, receiver.last_ai_advice)
-                    else:
-                        update_latest_data(cgm)
                 else:
                     latest_data["error"] = "未能成功取得最新血糖數據。"
             else:
