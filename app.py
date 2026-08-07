@@ -380,6 +380,21 @@ def background_cgm_fetcher():
     """背景執行緒：定期 (每 5 分鐘) 抓取 CareLink 數據"""
     print("🚀 背景 CareLink 血糖接收服務已啟動...")
     
+    # 如果歷史紀錄中有數據，先在背景為最後一筆資料生成 Groq AI 分析，避免網頁剛載入時顯示「等待接收數據...」
+    if receiver.history and not receiver.last_ai_advice:
+        try:
+            print("🧠 偵測到歷史紀錄，正在為最新歷史數據生成初始 Groq AI 分析...")
+            last_cgm = receiver.history[-1]
+            receiver.last_ai_advice = receiver.analyze_with_groq(
+                last_cgm.get("glucose"), 
+                last_cgm.get("trend"), 
+                last_cgm.get("iob")
+            )
+            latest_data["ai_advice"] = receiver.last_ai_advice
+            print(f"✅ 初始 AI 分析生成成功: {receiver.last_ai_advice}")
+        except Exception as e:
+            print(f"❌ 背景生成初始 AI 分析失敗: {e}")
+    
     # 第一次執行前，若無本機 tokens，先嘗試執行登入
     if not receiver.tokens:
         print("🔑 找不到本機憑證 Token，嘗試透過 Selenium 進行初始認證...")
@@ -514,6 +529,46 @@ def line_callback():
                 reply_token = event.get('replyToken')
                 print(f"[Message] User: {user_msg}")
                 
+                # 1. 檢查是否為手動輸入血糖數值 (例如 "血糖 125", "125", "125 mg/dL", "血糖: 125")
+                bg_match = re.search(r'^(?:血糖|bg|cgm)?\s*[:：=]?\s*(\d{2,3})\s*(?:mg/dl)?$', user_msg, re.IGNORECASE)
+                
+                if bg_match and user_msg not in ["血糖", "bg", "cgm"]:
+                    bg_val = int(bg_match.group(1))
+                    if 40 <= bg_val <= 400:
+                        now_dt = datetime.now(timezone(timedelta(hours=8)))
+                        now_str = now_dt.strftime('%Y-%m-%d %H:%M:%S')
+                        cgm_entry = {
+                            "glucose": bg_val,
+                            "trend": "➡️ 手動紀錄",
+                            "time": now_str,
+                            "iob": 0.0
+                        }
+                        receiver.add_to_history(cgm_entry)
+                        update_latest_data(cgm_entry)
+                        
+                        # 發送 Groq AI 分析
+                        ai_advice = receiver.analyze_with_groq(bg_val, "➡️ 手動紀錄", 0.0)
+                        receiver.last_ai_advice = ai_advice
+                        
+                        chart_url = None
+                        if generate_line_chart():
+                            now_ts = int(time.time())
+                            chart_url = f"{BASE_URL}/static/line_chart.png?t={now_ts}"
+                            
+                        msg = (
+                            f"【🩸 手動血糖紀錄成功】\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🩸 數值: {bg_val} mg/dL\n"
+                            f"⏰ 時間: {now_str[11:16]}\n"
+                            f"━━━━━━━━━━━━━━━\n"
+                            f"🤖 AI 照護建議:\n"
+                            f"{ai_advice}"
+                        )
+                        reply_line_message(reply_token, msg, chart_url)
+                        print(f"✅ 已成功紀錄並回覆手動血糖: {bg_val} mg/dL")
+                        continue
+                
+                # 2. 查詢當前血糖
                 if "血糖" in user_msg or user_msg.lower() in ["bg", "cgm", "blood glucose"]:
                     if receiver.history:
                         entry = receiver.history[-1]
