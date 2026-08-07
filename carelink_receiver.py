@@ -13,7 +13,10 @@ import logging
 import urllib.parse
 from datetime import datetime
 import requests
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 # 解決 Windows 終端機 CP950 編碼無法輸出 Emoji 的問題
 if sys.platform.startswith('win'):
@@ -97,7 +100,7 @@ class TaiwanCareLinkReceiver:
         self.groq_client = OpenAI(
             api_key=self.groq_api_key,
             base_url="https://api.groq.com/openai/v1"
-        ) if self.groq_api_key else None
+        ) if (self.groq_api_key and OpenAI is not None) else None
         
         self.history_file = os.path.join(BASE_DIR, '.carelink_history.json')
         self.history = self._load_history()
@@ -497,15 +500,30 @@ class TaiwanCareLinkReceiver:
             return False
 
     def ensure_authenticated(self):
-        """確保登入狀態，必要時自動刷新或重新登入"""
+        """確保登入狀態，必要時自動刷新、從 MongoDB 讀取新憑證，或執行重新登入"""
         if self.is_authenticated():
             return True
 
-        # 嘗試刷新
+        # 1. 嘗試用當前 refresh_token 刷新
         if self.refresh_access_token():
             return True
 
-        # 若刷新失敗，執行 Selenium 登入
+        # 2. 若刷新失敗，嘗試從 MongoDB 重新載入最新憑證（讀取本機常駐服務 local_token_daemon 上傳的憑證）
+        logging.info("🔄 嘗試從 MongoDB / 本機儲存庫重新載入最新憑證...")
+        fresh_tokens = self._load_tokens()
+        if fresh_tokens and fresh_tokens.get("refresh_token") != self.tokens.get("refresh_token"):
+            self.tokens = fresh_tokens
+            if self.is_authenticated() or self.refresh_access_token():
+                logging.info("✅ 成功從 MongoDB 載入並套用最新憑證！")
+                return True
+
+        # 3. 判斷運行環境：若在 Render 或無 GUI 雲端環境，避免執行 Selenium 登入
+        is_cloud_env = bool(os.environ.get("RENDER") or os.environ.get("IS_CLOUD") or (sys.platform != "win32" and not os.environ.get("DISPLAY")))
+        if is_cloud_env:
+            logging.warning("⚠️ 雲端環境憑證已失效且無法從 MongoDB 取得新權限。請確認本機常駐服務 (local_token_daemon.py) 是否正常執行並同步至 MongoDB。")
+            return False
+
+        # 4. 若在本地環境，才嘗試執行 Selenium 登入
         return self.login_with_selenium()
 
     def fetch_latest_cgm(self):
