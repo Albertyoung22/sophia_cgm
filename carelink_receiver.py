@@ -97,12 +97,26 @@ class TaiwanCareLinkReceiver:
         if self.tokens:
             self._save_tokens(self.tokens)
         
-        self.groq_client = OpenAI(
-            api_key=self.groq_api_key,
-            base_url="https://api.groq.com/openai/v1",
-            timeout=10.0,
-            max_retries=2
-        ) if (self.groq_api_key and OpenAI is not None) else None
+        if self.groq_api_key and OpenAI is not None:
+            try:
+                import httpx
+                custom_http = httpx.Client(
+                    timeout=10.0,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                    }
+                )
+                self.groq_client = OpenAI(
+                    api_key=self.groq_api_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    http_client=custom_http,
+                    max_retries=2
+                )
+            except Exception as ex_groq:
+                logging.warning(f"初始化 Groq AI 客戶端失敗: {ex_groq}")
+                self.groq_client = None
+        else:
+            self.groq_client = None
         
         self.history_file = os.path.join(BASE_DIR, '.carelink_history.json')
         self.history = self._load_history()
