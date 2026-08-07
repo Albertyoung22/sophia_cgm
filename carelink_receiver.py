@@ -80,10 +80,12 @@ class TaiwanCareLinkReceiver:
 
     def __init__(self, username=None, password=None, country_code="tw"):
         env = load_env()
-        self.username = username or env.get("CARELINK_USERNAME") or os.environ.get("CARELINK_USERNAME") or "Sophiafa"
-        self.password = password or env.get("CARELINK_PASSWORD") or os.environ.get("CARELINK_PASSWORD") or "20151120"
-        self.country = (country_code or env.get("CARELINK_COUNTRY") or os.environ.get("CARELINK_COUNTRY") or "tw").lower()
-        self.groq_api_key = env.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+        self.username = (username or env.get("CARELINK_USERNAME") or os.environ.get("CARELINK_USERNAME") or "Sophiafa").strip()
+        self.password = (password or env.get("CARELINK_PASSWORD") or os.environ.get("CARELINK_PASSWORD") or "20151120").strip()
+        self.country = (country_code or env.get("CARELINK_COUNTRY") or os.environ.get("CARELINK_COUNTRY") or "tw").strip().lower()
+        
+        raw_groq = env.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY") or ""
+        self.groq_api_key = raw_groq.strip()
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -92,7 +94,8 @@ class TaiwanCareLinkReceiver:
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
         })
         
-        self.mongo_uri = env.get("MONGO_URI") or env.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or os.environ.get("MONGO_CONNECTION")
+        raw_mongo = env.get("MONGO_URI") or env.get("MONGO_CONNECTION") or os.environ.get("MONGO_URI") or os.environ.get("MONGO_CONNECTION") or ""
+        self.mongo_uri = raw_mongo.strip()
         self.tokens = self._load_tokens()
         if self.tokens:
             self._save_tokens(self.tokens)
@@ -204,7 +207,7 @@ class TaiwanCareLinkReceiver:
 """
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self.groq_api_key}",
+            "Authorization": f"Bearer {self.groq_api_key.strip()}",
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         }
